@@ -1,19 +1,15 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";   // ✅ Import Link from react-router-dom
 import "./Login.css";
 
+import boy from "../assets/boy.png";
+import twowoman from "../assets/twowoman.png";
+import laptop from "../assets/laptop.png";
+
 const slides = [
-  {
-    img: "/src/assets/boy.png",
-    text: `"Learn new skills and grow your career with mentorship."`,
-  },
-  {
-    img: "/src/assets/twowoman.png",
-    text: `"Build your future through collaboration and shared knowledge."`,
-  },
-  {
-    img: "/src/assets/laptop.png",
-    text: `"Unlock success with guidance from experts."`,
-  },
+  { img: boy, text: "Learn new skills and grow your career with experts." },
+  { img: twowoman, text: "Build your future through collaboration and learning." },
+  { img: laptop, text: "Unlock success with guidance from experts." },
 ];
 
 const Login: React.FC = () => {
@@ -22,7 +18,8 @@ const Login: React.FC = () => {
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrent((prev) => (prev + 1) % slides.length);
-    }, 4000); // slide every 4s
+    }, 4000);
+
     return () => clearInterval(timer);
   }, []);
 
@@ -54,7 +51,7 @@ const Login: React.FC = () => {
           </form>
 
           <div className="extra-links">
-            <a href="#">Forgot Password?</a> | <a href="#">Create Account</a>
+            <Link to="#">Forgot Password?</Link> | <Link to="/signup">Create Account</Link>
           </div>
         </div>
       </div>

@@ -177,3 +177,21 @@ form button:hover {
 .extra-links a:hover {
   text-decoration: underline;
 }
+/* Style textarea to match input fields */
+form textarea {
+  width: 100%;
+  padding: 0.9rem;
+  margin: 0.6rem 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: "Inter", sans-serif;
+  resize: vertical; /* Allows vertical resize but keeps good initial size */
+  min-height: 100px; /* Ensures reasonable initial height */
+}
+
+form textarea:focus {
+  outline: none;
+  border: 1px solid #1e3932;
+  box-shadow: 0 0 5px rgba(30, 57, 50, 0.4);
+}
