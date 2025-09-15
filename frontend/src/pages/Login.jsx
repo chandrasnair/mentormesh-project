@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";   // ✅ Import Link from react-router-dom
+import { Link } from "react-router-dom";
 import "./Login.css";
 
 import boy from "../assets/boy.png";
@@ -12,7 +12,7 @@ const slides = [
   { img: laptop, text: "Unlock success with guidance from experts." },
 ];
 
-const Login: React.FC = () => {
+const Login = () => {
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -25,7 +25,6 @@ const Login: React.FC = () => {
 
   return (
     <div className="login-container">
-      {/* Left Slideshow */}
       <div className="left-panel">
         {slides.map((slide, index) => (
           <div
@@ -38,7 +37,6 @@ const Login: React.FC = () => {
         ))}
       </div>
 
-      {/* Right Login Form */}
       <div className="right-panel">
         <div className="login-box">
           <h1 className="brand-name">MentorMesh</h1>
@@ -60,3 +58,5 @@ const Login: React.FC = () => {
 };
 
 export default Login;
+
+
