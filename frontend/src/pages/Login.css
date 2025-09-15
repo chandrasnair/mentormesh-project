@@ -1,0 +1,197 @@
+/* Ensure page fills full screen */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* Make login page take entire screen */
+.login-page {
+  display: flex;
+  height: 100vh;  /* full viewport height */
+  width: 100vw;   /* full viewport width */
+}
+
+/* Left side (slider) */
+.login-left {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: #d8e3d2; /* light olive green */
+}
+
+/* Right side (form) */
+.login-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  background: #ffffff;
+}
+/* Full screen split */
+.login-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  font-family: "Inter", sans-serif;
+}
+
+/* Left slideshow */
+.left-panel {
+  flex: 1;
+  background-color: #dbe4c6; /* olive green */
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Slides */
+.slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* text moves lower */
+  align-items: center;
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+.slide.active {
+  opacity: 1;
+}
+
+/* Make images cover the whole panel */
+.slide img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;   /* 🔑 This makes image cover full panel */
+  z-index: 0;
+  opacity: 0.7; /* slightly dim so text is readable */
+}
+
+/* Stylish quotes */
+.slide p {
+  position: relative;
+  z-index: 1;
+  font-family: "Playfair Display", serif;
+  font-size: 1.5rem;
+  font-style: italic;
+  font-weight: 600;
+  color: #1e3932; /* dark green text */
+  text-align: center;
+  max-width: 80%;
+  background: rgba(255, 255, 255, 0.6); /* faint background behind text */
+  padding: 0.8rem 1rem;
+  border-radius: 10px;
+}
+
+/* Right login panel */
+.right-panel {
+  flex: 1;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.login-box {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+
+.brand-name {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1e3932; /* dark green */
+  margin-bottom: 0.5rem;
+}
+
+.welcome-text {
+  font-size: 1.2rem;
+  color: #444;
+  margin-bottom: 2rem;
+  font-weight: 500;
+}
+
+/* Inputs */
+form input {
+  width: 100%;
+  padding: 0.9rem;
+  margin: 0.6rem 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+form input:focus {
+  outline: none;
+  border: 1px solid #1e3932;
+  box-shadow: 0 0 5px rgba(30, 57, 50, 0.4);
+}
+
+/* Button */
+form button {
+  width: 100%;
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: #1e3932; /* dark green */
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+form button:hover {
+  background-color: #244f3e;
+}
+
+/* Links */
+.extra-links {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.extra-links a {
+  color: #1e3932;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.extra-links a:hover {
+  text-decoration: underline;
+}
+/* Style textarea to match input fields */
+form textarea {
+  width: 100%;
+  padding: 0.9rem;
+  margin: 0.6rem 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: "Inter", sans-serif;
+  resize: vertical; /* Allows vertical resize but keeps good initial size */
+  min-height: 100px; /* Ensures reasonable initial height */
+}
+
+form textarea:focus {
+  outline: none;
+  border: 1px solid #1e3932;
+  box-shadow: 0 0 5px rgba(30, 57, 50, 0.4);
+}
