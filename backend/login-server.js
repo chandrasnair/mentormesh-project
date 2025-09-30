@@ -1,4 +1,4 @@
-// login-server.js
+// login-server.js - Updated for Dual Role Support
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -13,51 +13,122 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mentormesh_login', {
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`\n${req.method} ${req.path}`);
+  if (Object.keys(req.body).length > 0 && req.path !== '/api/login') {
+    // Don't log passwords
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
+
+// Database connection - IMPORTANT: Use same database as signup
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mentormesh_signup', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
 
-// User Schema (simplified for login)
+// Updated User Schema - MUST match signup server schema EXACTLY
 const userSchema = new mongoose.Schema({
   fullName: { 
     type: String, 
-    required: true,
-    trim: true
+    required: [true, 'Full name is required'],
+    trim: true,
+    minlength: [2, 'Full name must be at least 2 characters'],
+    maxlength: [100, 'Full name cannot exceed 100 characters']
   },
   email: { 
     type: String, 
-    required: true,
+    required: [true, 'Email is required'],
     unique: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
   password: { 
     type: String, 
-    required: true
+    required: [true, 'Password is required'],
+    minlength: [6, 'Password must be at least 6 characters']
   },
-  role: { 
-    type: String, 
-    enum: ['mentor', 'mentee'],
-    required: true
+  
+  // Array of roles for dual role support
+  roles: {
+    type: [String],
+    enum: {
+      values: ['mentor', 'mentee', 'admin'],
+      message: 'Role must be mentor, mentee, or admin'
+    },
+    required: [true, 'At least one role is required'],
+    validate: {
+      validator: function(v) {
+        return v && v.length > 0;
+      },
+      message: 'At least one role must be selected'
+    }
   },
-  skills: [String],
-  bio: String,
-  interests: [String],
-  goals: String,
-  currentLevel: { 
-    type: String, 
-    enum: ['beginner', 'intermediate', 'advanced'],
-    default: 'beginner'
+  
+  // Mentor Profile
+  mentorProfile: {
+    skills: {
+      type: [String],
+      default: []
+    },
+    bio: { 
+      type: String,
+      trim: true
+    },
+    expertise: {
+      type: String,
+      trim: true
+    },
+    experience: {
+      type: Number,
+      min: 0
+    }
   },
+  
+  // Mentee Profile
+  menteeProfile: {
+    interests: {
+      type: [String],
+      default: []
+    },
+    goals: { 
+      type: String, 
+      trim: true 
+    },
+    currentLevel: { 
+      type: String, 
+      enum: ['beginner', 'intermediate', 'advanced'],
+      default: 'beginner'
+    },
+    bio: {
+      type: String,
+      trim: true
+    },
+    learningGoals: {
+      type: [String],
+      default: []
+    }
+  },
+  
+  // Account status
   isVerified: { type: Boolean, default: false },
+  verificationToken: { type: String },
   accountStatus: { 
     type: String, 
     enum: ['pending', 'active', 'suspended'], 
     default: 'pending' 
   },
-  profileCompletion: { type: Number, default: 0 },
+  
+  // Profile completion tracking per role
+  profileCompletion: {
+    mentor: { type: Number, default: 0 },
+    mentee: { type: Number, default: 0 },
+    overall: { type: Number, default: 0 }
+  },
+  
   lastLogin: { type: Date },
   
   // Password reset fields
@@ -66,6 +137,15 @@ const userSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Helper methods
+userSchema.methods.isMentor = function() {
+  return this.roles.includes('mentor');
+};
+
+userSchema.methods.isMentee = function() {
+  return this.roles.includes('mentee');
+};
 
 // Method to compare password
 userSchema.methods.comparePassword = async function(candidatePassword) {
@@ -76,21 +156,32 @@ const User = mongoose.model('User', userSchema);
 
 // Email configuration
 const createEmailTransporter = () => {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('Email credentials not configured');
+    return null;
+  }
+
+  try {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+  } catch (error) {
+    console.error('Failed to create email transporter:', error.message);
+    return null;
+  }
 };
+
 // Utility function to generate JWT token
 const generateAccessToken = (user) => {
   return jwt.sign(
     { 
       userId: user._id,
       email: user.email,
-      role: user.role,
+      roles: user.roles, // Changed from 'role' to 'roles'
       isVerified: user.isVerified
     },
     process.env.JWT_SECRET || 'your-login-secret-key',
@@ -104,12 +195,13 @@ const generateAccessToken = (user) => {
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    service: 'MentorMesh Login Service',
-    timestamp: new Date().toISOString()
+    service: 'MentorMesh Login Service (Dual Role)',
+    timestamp: new Date().toISOString(),
+    emailConfigured: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS)
   });
 });
 
-// Main login route
+// Main login route - Updated for dual roles
 app.post('/api/login', async (req, res) => {
   try {
     const { emailOrUsername, password } = req.body;
@@ -139,7 +231,7 @@ app.post('/api/login', async (req, res) => {
       });
     }
 
-    console.log('User found:', user.email);
+    console.log('User found:', user.email, 'Roles:', user.roles);
 
     // Check if account is suspended
     if (user.accountStatus === 'suspended') {
@@ -173,7 +265,7 @@ app.post('/api/login', async (req, res) => {
       id: user._id,
       fullName: user.fullName,
       email: user.email,
-      role: user.role,
+      roles: user.roles, // Array of roles
       isVerified: user.isVerified,
       accountStatus: user.accountStatus,
       profileCompletion: user.profileCompletion,
@@ -181,13 +273,12 @@ app.post('/api/login', async (req, res) => {
     };
 
     // Add role-specific data
-    if (user.role === 'mentor') {
-      userData.skills = user.skills;
-      userData.bio = user.bio;
-    } else if (user.role === 'mentee') {
-      userData.interests = user.interests;
-      userData.goals = user.goals;
-      userData.currentLevel = user.currentLevel;
+    if (user.isMentor()) {
+      userData.mentorProfile = user.mentorProfile;
+    }
+    
+    if (user.isMentee()) {
+      userData.menteeProfile = user.menteeProfile;
     }
 
     console.log('Login successful for:', user.email);
@@ -215,26 +306,47 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+    
     if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required' 
+      });
     }
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
 
+    // Generic message for security (don't reveal if email exists)
     const responseMessage = 'If an account with that email exists, we have sent a password reset link.';
-    if (!user) return res.json({ success: true, message: responseMessage });
+    
+    if (!user) {
+      return res.json({ success: true, message: responseMessage });
+    }
 
     // Generate reset token
-    const resetToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    console.log(resetToken)
+    const resetToken = Math.random().toString(36).substring(2, 15) + 
+                       Math.random().toString(36).substring(2, 15);
+    
+    console.log('Password reset token generated:', resetToken);
+    
     user.passwordResetToken = resetToken;
-    user.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000);
+    user.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     await user.save();
 
     // Send reset email
     const transporter = createEmailTransporter();
-
- 
+    
+    if (!transporter) {
+      console.warn('Email not configured - reset token:', resetToken);
+      return res.json({ 
+        success: true, 
+        message: responseMessage,
+        debug: {
+          resetToken,
+          resetUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${user.email}`
+        }
+      });
+    }
 
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${user.email}`;
 
@@ -253,20 +365,28 @@ app.post('/api/forgot-password', async (req, res) => {
               Reset Password
             </a>
           </div>
-          <p>This link will expire in 10 minutes.</p>
+          <p>Or copy this link: <br><span style="word-break: break-all; color: #3498db;">${resetUrl}</span></p>
+          <p style="color: #e74c3c;"><strong>This link will expire in 10 minutes.</strong></p>
           <p>If you didn't request this, ignore this email.</p>
         </div>
       `
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`Password reset email sent to ${user.email}`);
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`Password reset email sent to ${user.email}`);
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError.message);
+    }
 
     res.json({ success: true, message: responseMessage });
 
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({ success: false, message: 'Server error while processing password reset request' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while processing password reset request' 
+    });
   }
 });
 
@@ -274,6 +394,8 @@ app.post('/api/forgot-password', async (req, res) => {
 app.post('/api/reset-password', async (req, res) => {
   try {
     const { token, email, newPassword } = req.body;
+
+    console.log('Password reset attempt for:', email);
 
     if (!token || !email || !newPassword) {
       return res.status(400).json({
@@ -303,14 +425,15 @@ app.post('/api/reset-password', async (req, res) => {
     }
 
     // Hash new password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
 
     // Update password and clear reset fields
     user.password = hashedPassword;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save();
+
+    console.log('Password reset successful for:', user.email);
 
     res.json({
       success: true,
@@ -356,7 +479,7 @@ app.post('/api/verify-token', async (req, res) => {
           id: user._id,
           fullName: user.fullName,
           email: user.email,
-          role: user.role,
+          roles: user.roles,
           isVerified: user.isVerified,
           accountStatus: user.accountStatus
         }
@@ -390,6 +513,7 @@ app.post('/api/verify-token', async (req, res) => {
 app.get('/api/profile', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
+    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
@@ -408,24 +532,31 @@ app.get('/api/profile', async (req, res) => {
       });
     }
 
+    const profileData = {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      roles: user.roles,
+      isVerified: user.isVerified,
+      accountStatus: user.accountStatus,
+      profileCompletion: user.profileCompletion,
+      lastLogin: user.lastLogin,
+      createdAt: user.createdAt
+    };
+
+    // Add role-specific data
+    if (user.isMentor()) {
+      profileData.mentorProfile = user.mentorProfile;
+    }
+    
+    if (user.isMentee()) {
+      profileData.menteeProfile = user.menteeProfile;
+    }
+
     res.json({
       success: true,
       data: {
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: user.role,
-          isVerified: user.isVerified,
-          accountStatus: user.accountStatus,
-          profileCompletion: user.profileCompletion,
-          skills: user.skills,
-          bio: user.bio,
-          interests: user.interests,
-          goals: user.goals,
-          currentLevel: user.currentLevel,
-          lastLogin: user.lastLogin
-        }
+        user: profileData
       }
     });
 
@@ -441,6 +572,76 @@ app.get('/api/profile', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while fetching profile'
+    });
+  }
+});
+
+// Update profile (protected route)
+app.put('/api/profile', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authorization token required'
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-login-secret-key');
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const { fullName, mentorProfile, menteeProfile } = req.body;
+
+    // Update basic fields
+    if (fullName) user.fullName = fullName.trim();
+
+    // Update mentor profile if user is a mentor
+    if (user.isMentor() && mentorProfile) {
+      user.mentorProfile = {
+        ...user.mentorProfile,
+        ...mentorProfile
+      };
+    }
+
+    // Update mentee profile if user is a mentee
+    if (user.isMentee() && menteeProfile) {
+      user.menteeProfile = {
+        ...user.menteeProfile,
+        ...menteeProfile
+      };
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          roles: user.roles,
+          mentorProfile: user.mentorProfile,
+          menteeProfile: user.menteeProfile,
+          profileCompletion: user.profileCompletion
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating profile'
     });
   }
 });
@@ -465,27 +666,30 @@ app.use((req, res) => {
 
 // Database connection event handlers
 mongoose.connection.on('connected', () => {
-  console.log('📁 Connected to MongoDB (Login Service)');
+  console.log('Connected to MongoDB (Login Service - Dual Role Support)');
 });
 
 mongoose.connection.on('error', (err) => {
-  console.error('❌ MongoDB connection error:', err);
+  console.error('MongoDB connection error:', err);
 });
 
 mongoose.connection.on('disconnected', () => {
-  console.log('📁 Disconnected from MongoDB');
+  console.log('Disconnected from MongoDB');
 });
 
 // Start server
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
-  console.log(`🚀 MentorMesh Login Server running on port ${PORT}`);
-  console.log(`📧 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`\nMentorMesh Login Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Email configured: ${!!(process.env.EMAIL_USER && process.env.EMAIL_PASS)}`);
+  console.log(`Dual role support enabled`);
+  console.log(`Health check: http://localhost:${PORT}/api/health\n`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('\n🔄 Shutting down login server gracefully...');
+  console.log('\nShutting down login server gracefully...');
   await mongoose.connection.close();
   process.exit(0);
 });
