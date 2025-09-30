@@ -1,17 +1,26 @@
-// signup-server.js
+// signup-server.js - Fixed Version with Logging
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
+const nodemailer = require('nodemailer'); // Make sure this is installed: npm install nodemailer
 require('dotenv').config();
 
 const app = express();
 
-// Middleware
+// Middleware - MUST be before routes
 app.use(cors());
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`\n📨 ${req.method} ${req.path}`);
+  if (Object.keys(req.body).length > 0) {
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
 
 // Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mentormesh_signup', {
@@ -19,7 +28,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mentormes
   useUnifiedTopology: true,
 });
 
-// User Schema for Signup
+// Updated User Schema with Dual Role Support
 const userSchema = new mongoose.Schema({
   fullName: { 
     type: String, 
@@ -41,32 +50,70 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters']
   },
-  role: { 
-    type: String, 
-    enum: {
-      values: ['mentor', 'mentee'],
-      message: 'Role must be either mentor or mentee'
-    },
-    required: [true, 'Role is required']
-  },
-  // Mentor-specific fields
-  skills: {
+  
+  // Array of roles for dual role support
+  roles: {
     type: [String],
-    default: []
+    enum: {
+      values: ['mentor', 'mentee', 'admin'],
+      message: 'Role must be mentor, mentee, or admin'
+    },
+    required: [true, 'At least one role is required'],
+    validate: {
+      validator: function(v) {
+        return v && v.length > 0;
+      },
+      message: 'At least one role must be selected'
+    }
   },
-  bio: { 
-  type: String,
-  trim: true,
-  maxlength: [1000, 'Bio cannot exceed 1000 characters']
-},
-  // Mentee-specific fields (optional for now, can be filled later)
-  interests: [{ type: String, trim: true }],
-  goals: { type: String, trim: true },
-  currentLevel: { 
-    type: String, 
-    enum: ['beginner', 'intermediate', 'advanced'],
-    default: 'beginner'
+  
+  // Mentor Profile
+  mentorProfile: {
+    skills: {
+      type: [String],
+      default: []
+    },
+    bio: { 
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Bio cannot exceed 1000 characters']
+    },
+    expertise: {
+      type: String,
+      trim: true
+    },
+    experience: {
+      type: Number,
+      min: 0
+    }
   },
+  
+  // Mentee Profile
+  menteeProfile: {
+    interests: {
+      type: [String],
+      default: []
+    },
+    goals: { 
+      type: String, 
+      trim: true 
+    },
+    currentLevel: { 
+      type: String, 
+      enum: ['beginner', 'intermediate', 'advanced'],
+      default: 'beginner'
+    },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Bio cannot exceed 1000 characters']
+    },
+    learningGoals: {
+      type: [String],
+      default: []
+    }
+  },
+  
   // Account status
   isVerified: { type: Boolean, default: false },
   verificationToken: { type: String },
@@ -75,33 +122,46 @@ const userSchema = new mongoose.Schema({
     enum: ['pending', 'active', 'suspended'], 
     default: 'pending' 
   },
-  profileCompletion: { type: Number, default: 0 } // Percentage
+  
+  // Profile completion tracking per role
+  profileCompletion: {
+    mentor: { type: Number, default: 0 },
+    mentee: { type: Number, default: 0 },
+    overall: { type: Number, default: 0 }
+  }
 }, {
   timestamps: true
 });
 
+// Helper methods
+userSchema.methods.isMentor = function() {
+  return this.roles.includes('mentor');
+};
+
+userSchema.methods.isMentee = function() {
+  return this.roles.includes('mentee');
+};
+
+userSchema.methods.addRole = function(role) {
+  if (!this.roles.includes(role)) {
+    this.roles.push(role);
+  }
+};
+
+userSchema.methods.removeRole = function(role) {
+  this.roles = this.roles.filter(r => r !== role);
+};
+
+// Pre-validate to ensure role-specific requirements
 userSchema.pre('validate', function(next) {
-  // Validate mentor-specific requirements
-  if (this.role === 'mentor') {
-    // Check skills
-    if (!this.skills || !Array.isArray(this.skills) || this.skills.length === 0) {
-      this.invalidate('skills', 'Skills are required for mentors');
-    } else {
-      // Clean and validate individual skills
-      const validSkills = this.skills
-        .map(skill => skill ? skill.toString().trim() : '')
-        .filter(skill => skill.length > 0);
-      
-      if (validSkills.length === 0) {
-        this.invalidate('skills', 'At least one valid skill is required for mentors');
-      } else {
-        this.skills = validSkills; // Update with cleaned skills
-      }
+  // Validate mentor profile if mentor role is selected
+  if (this.roles.includes('mentor')) {
+    if (!this.mentorProfile.skills || this.mentorProfile.skills.length === 0) {
+      this.invalidate('mentorProfile.skills', 'Skills are required for mentors');
     }
     
-    // Check bio
-    if (!this.bio || this.bio.trim().length < 10) {
-      this.invalidate('bio', 'Bio is required for mentors and must be at least 10 characters');
+    if (!this.mentorProfile.bio || this.mentorProfile.bio.trim().length < 10) {
+      this.invalidate('mentorProfile.bio', 'Bio is required for mentors and must be at least 10 characters');
     }
   }
   
@@ -110,45 +170,110 @@ userSchema.pre('validate', function(next) {
 
 // Pre-save middleware to calculate profile completion
 userSchema.pre('save', function(next) {
-  let completion = 0;
-  const fields = ['fullName', 'email', 'password', 'role'];
+  const baseFields = ['fullName', 'email', 'password'];
+  let baseCompletion = 0;
   
-  fields.forEach(field => {
-    if (this[field]) completion += 20;
+  baseFields.forEach(field => {
+    if (this[field]) baseCompletion += (100 / 3) / baseFields.length;
   });
   
-  if (this.role === 'mentor') {
-    if (this.skills && this.skills.length > 0) completion += 10;
-    if (this.bio && this.bio.length > 10) completion += 10;
+  // Calculate mentor profile completion
+  if (this.roles.includes('mentor')) {
+    let mentorCompletion = baseCompletion;
+    const mentorFields = [
+      { field: 'skills', weight: 30 },
+      { field: 'bio', weight: 30 },
+      { field: 'expertise', weight: 20 },
+      { field: 'experience', weight: 20 }
+    ];
+    
+    mentorFields.forEach(({ field, weight }) => {
+      const value = this.mentorProfile[field];
+      if (value && (Array.isArray(value) ? value.length > 0 : true)) {
+        mentorCompletion += weight;
+      }
+    });
+    
+    this.profileCompletion.mentor = Math.min(100, Math.round(mentorCompletion));
   }
   
-  this.profileCompletion = completion;
+  // Calculate mentee profile completion
+  if (this.roles.includes('mentee')) {
+    let menteeCompletion = baseCompletion;
+    const menteeFields = [
+      { field: 'interests', weight: 25 },
+      { field: 'goals', weight: 25 },
+      { field: 'currentLevel', weight: 20 },
+      { field: 'bio', weight: 15 }
+    ];
+    
+    menteeFields.forEach(({ field, weight }) => {
+      const value = this.menteeProfile[field];
+      if (value && (Array.isArray(value) ? value.length > 0 : true)) {
+        menteeCompletion += weight;
+      }
+    });
+    
+    this.profileCompletion.mentee = Math.min(100, Math.round(menteeCompletion));
+  }
+  
+  // Calculate overall completion
+  const activeProfiles = [];
+  if (this.roles.includes('mentor')) activeProfiles.push(this.profileCompletion.mentor);
+  if (this.roles.includes('mentee')) activeProfiles.push(this.profileCompletion.mentee);
+  
+  this.profileCompletion.overall = activeProfiles.length > 0
+    ? Math.round(activeProfiles.reduce((a, b) => a + b, 0) / activeProfiles.length)
+    : 0;
+  
   next();
 });
 
 const User = mongoose.model('User', userSchema);
 
-// Email configuration (using nodemailer) 
+// Email configuration - Fixed version
 const createEmailTransporter = () => {
-  return nodemailer.createTransport({  
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS 
-    }
-  });
+  // Check if email credentials are configured
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('⚠️  Email credentials not configured in .env file');
+    return null;
+  }
+
+  try {
+    return nodemailer.createTransport({  
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS 
+      }
+    });
+  } catch (error) {
+    console.error('❌ Failed to create email transporter:', error.message);
+    return null;
+  }
 };
 
-// Utility function to generate verification token
 const generateVerificationToken = () => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  console.log('🔑 Generated verification token:', token);
+  return token;
 };
 
-// Utility function to send verification email
 const sendVerificationEmail = async (user, verificationToken) => {
   const transporter = createEmailTransporter();
   
+  if (!transporter) {
+    console.warn('⚠️  Email transporter not available - skipping email');
+    return false;
+  }
+
   const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}&email=${user.email}`;
+  
+  console.log('📧 Verification URL:', verificationUrl);
+  
+  const roleText = user.roles.length > 1 
+    ? `both a <strong>mentor</strong> and a <strong>mentee</strong>`
+    : `a <strong>${user.roles[0]}</strong>`;
   
   const mailOptions = {
     from: process.env.EMAIL_USER || 'noreply@mentormesh.com',
@@ -157,7 +282,7 @@ const sendVerificationEmail = async (user, verificationToken) => {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2c3e50;">Welcome to MentorMesh, ${user.fullName}!</h2>
-        <p>Thank you for joining our platform as a <strong>${user.role}</strong>.</p>
+        <p>Thank you for joining our platform as ${roleText}.</p>
         <p>Please click the button below to verify your email address:</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${verificationUrl}" 
@@ -176,25 +301,25 @@ const sendVerificationEmail = async (user, verificationToken) => {
   
   try {
     await transporter.sendMail(mailOptions);
+    console.log('✅ Verification email sent to:', user.email);
     return true;
   } catch (error) {
-    console.error('Email sending error:', error);
+    console.error('❌ Email sending error:', error.message);
     return false;
   }
 };
 
 // Routes
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    service: 'MentorMesh Signup Service',
-    timestamp: new Date().toISOString()
+    service: 'MentorMesh Signup Service (Dual Role)',
+    timestamp: new Date().toISOString(),
+    emailConfigured: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS)
   });
 });
 
-// Get available skills (for frontend dropdown/suggestions)
 app.get('/api/skills', (req, res) => {
   const popularSkills = [
     'JavaScript', 'Python', 'React', 'Node.js', 'Data Science',
@@ -208,23 +333,39 @@ app.get('/api/skills', (req, res) => {
   res.json({ skills: popularSkills });
 });
 
-// Main signup route
+// Main signup route - Fixed with better logging
 app.post('/api/signup', async (req, res) => {
   try {
+    console.log('\n🎯 ===== SIGNUP REQUEST =====');
+    console.log('Raw body received:', req.body);
+    
     const { 
       fullName, 
       email, 
       password, 
       confirmPassword, 
-      role, 
-      skills, 
-      bio,
+      roles,
+      // Mentor fields
+      mentorSkills,
+      mentorBio,
+      expertise,
+      experience,
+      // Mentee fields
       interests,
       goals,
-      currentLevel 
+      currentLevel,
+      menteeBio,
+      learningGoals
     } = req.body;
 
-    console.log('Received signup data:', { fullName, email, role, skills: typeof skills, skillsContent: skills });
+    console.log('📋 Parsed data:', { 
+      fullName, 
+      email, 
+      roles,
+      hasMentorSkills: !!mentorSkills,
+      hasMentorBio: !!mentorBio,
+      hasInterests: !!interests
+    });
 
     // Input validation
     const errors = [];
@@ -245,35 +386,39 @@ app.post('/api/signup', async (req, res) => {
       errors.push('Passwords do not match');
     }
 
-    if (!role || !['mentor', 'mentee'].includes(role)) {
-      errors.push('Please select a valid role');
+    // Validate roles
+    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+      errors.push('Please select at least one role');
     }
 
-    // Role-specific validations and processing
-    let validatedSkills = [];
-    if (role === 'mentor') {
-      if (typeof skills === 'string') {
-        // Handle comma-separated string
-        validatedSkills = skills.split(',')
-          .map(s => s.trim())
-          .filter(s => s.length > 0);
-      } else if (Array.isArray(skills)) {
-        // Handle array (from frontend)
-        validatedSkills = skills
-          .map(skill => skill ? skill.toString().trim() : '')
-          .filter(skill => skill.length > 0);
+    const validRoles = ['mentor', 'mentee'];
+    const invalidRoles = roles?.filter(r => !validRoles.includes(r));
+    if (invalidRoles && invalidRoles.length > 0) {
+      errors.push(`Invalid role(s): ${invalidRoles.join(', ')}`);
+    }
+
+    // Role-specific validations
+    if (roles && roles.includes('mentor')) {
+      let validatedSkills = [];
+      if (typeof mentorSkills === 'string') {
+        validatedSkills = mentorSkills.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      } else if (Array.isArray(mentorSkills)) {
+        validatedSkills = mentorSkills.map(s => s?.toString().trim()).filter(s => s && s.length > 0);
       }
+      
+      console.log('🔍 Validated mentor skills:', validatedSkills);
       
       if (validatedSkills.length === 0) {
         errors.push('At least one skill is required for mentors');
       }
       
-      if (!bio || bio.trim().length < 10) {
+      if (!mentorBio || mentorBio.trim().length < 10) {
         errors.push('Bio is required for mentors and must be at least 10 characters');
       }
     }
 
     if (errors.length > 0) {
+      console.log('❌ Validation errors:', errors);
       return res.status(400).json({ 
         success: false,
         message: 'Validation failed', 
@@ -287,6 +432,7 @@ app.post('/api/signup', async (req, res) => {
     });
     
     if (existingUser) {
+      console.log('❌ User already exists:', email);
       return res.status(409).json({ 
         success: false,
         message: 'An account with this email already exists',
@@ -295,103 +441,149 @@ app.post('/api/signup', async (req, res) => {
     }
 
     // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
+    console.log('🔐 Hashing password...');
+    const hashedPassword = await bcrypt.hash(password, 12);
+    
     // Generate verification token
     const verificationToken = generateVerificationToken();
 
-    // Create user object
+    // Build user data
     const userData = {
       fullName: fullName.trim(),
       email: email.toLowerCase().trim(),
       password: hashedPassword,
-      role,
-      verificationToken
+      roles: roles,
+      verificationToken,
+      mentorProfile: {},
+      menteeProfile: {}
     };
 
-    // Add role-specific fields
-    if (role === 'mentor') {
-      userData.skills = validatedSkills;
-      userData.bio = bio.trim();
-    } else if (role === 'mentee') {
-      if (interests) {
-        if (typeof interests === 'string') {
-          userData.interests = interests.split(',')
-            .map(interest => interest.trim())
-            .filter(interest => interest.length > 0);
-        } else if (Array.isArray(interests)) {
-          userData.interests = interests
-            .map(interest => interest.trim())
-            .filter(interest => interest.length > 0);
-        }
+    // Add mentor profile data
+    if (roles.includes('mentor')) {
+      let validatedSkills = [];
+      if (typeof mentorSkills === 'string') {
+        validatedSkills = mentorSkills.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      } else if (Array.isArray(mentorSkills)) {
+        validatedSkills = mentorSkills.map(s => s?.toString().trim()).filter(s => s && s.length > 0);
       }
-      if (goals) userData.goals = goals.trim();
-      if (currentLevel) userData.currentLevel = currentLevel;
+      
+      userData.mentorProfile = {
+        skills: validatedSkills,
+        bio: mentorBio?.trim(),
+        expertise: expertise?.trim(),
+        experience: experience ? Number(experience) : undefined
+      };
+      
+      console.log('👨‍🏫 Mentor profile:', userData.mentorProfile);
     }
 
-    console.log('Creating user with data:', userData);
+    // Add mentee profile data
+    if (roles.includes('mentee')) {
+      let validatedInterests = [];
+      if (typeof interests === 'string') {
+        validatedInterests = interests.split(',').map(i => i.trim()).filter(i => i.length > 0);
+      } else if (Array.isArray(interests)) {
+        validatedInterests = interests.map(i => i?.trim()).filter(i => i && i.length > 0);
+      }
+      
+      let validatedLearningGoals = [];
+      if (typeof learningGoals === 'string') {
+        validatedLearningGoals = learningGoals.split(',').map(g => g.trim()).filter(g => g.length > 0);
+      } else if (Array.isArray(learningGoals)) {
+        validatedLearningGoals = learningGoals.map(g => g?.trim()).filter(g => g && g.length > 0);
+      }
+      
+      userData.menteeProfile = {
+        interests: validatedInterests,
+        goals: goals?.trim(),
+        currentLevel: currentLevel || 'beginner',
+        bio: menteeBio?.trim(),
+        learningGoals: validatedLearningGoals
+      };
+      
+      console.log('👨‍🎓 Mentee profile:', userData.menteeProfile);
+    }
 
-    // Create user
+    console.log('💾 Creating user in database...');
+
+    // Create and save user
     const user = new User(userData);
     await user.save();
 
-    console.log('User created successfully!');
+    console.log('✅ User created successfully! ID:', user._id);
 
-    // Send verification email - don't fail signup if email fails
+    // Send verification email
     let emailSent = false;
     let emailError = null;
     
     try {
       emailSent = await sendVerificationEmail(user, verificationToken);
     } catch (error) {
-      console.error('Email sending failed:', error.message);
+      console.error('❌ Email sending failed:', error.message);
       emailError = error.message;
-      // Continue with signup even if email fails
     }
     
-    // Generate JWT token (for immediate login after signup)
+    // Generate JWT token
     const token = jwt.sign(
       { 
         userId: user._id, 
         email: user.email, 
-        role: user.role,
+        roles: user.roles,
         isVerified: user.isVerified 
       },
       process.env.JWT_SECRET || 'your-signup-secret-key',
       { expiresIn: '24h' }
     );
 
-    // Response
+    // Build response
+    const responseData = {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      roles: user.roles,
+      isVerified: user.isVerified,
+      profileCompletion: user.profileCompletion,
+      accountStatus: user.accountStatus
+    };
+
+    if (user.roles.includes('mentor')) {
+      responseData.mentorProfile = user.mentorProfile;
+    }
+
+    if (user.roles.includes('mentee')) {
+      responseData.menteeProfile = user.menteeProfile;
+    }
+
+    console.log('🎉 Signup successful!');
+    console.log('===========================\n');
+
     res.status(201).json({
       success: true,
       message: 'Account created successfully!',
       data: {
         token,
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: user.role,
-          skills: user.skills,
-          bio: user.bio,
-          isVerified: user.isVerified,
-          profileCompletion: user.profileCompletion,
-          accountStatus: user.accountStatus
-        }
+        user: responseData
       },
       nextSteps: {
         emailVerification: emailSent 
           ? 'Verification email sent' 
-          : `Email sending failed${emailError ? ': ' + emailError : ''}. You can resend it later.`,
-        profileCompletion: user.profileCompletion < 100 ? 'Complete your profile for better matching' : 'Profile completed'
+          : `Email not sent${emailError ? ': ' + emailError : ' (email not configured)'}. You can verify later.`,
+        profileCompletion: user.profileCompletion.overall < 100 
+          ? 'Complete your profile(s) for better matching' 
+          : 'Profile completed',
+        availability: user.roles.includes('mentor') 
+          ? 'Add your availability slots to start accepting bookings' 
+          : null
+      },
+      debug: {
+        verificationToken: verificationToken,
+        verificationUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}&email=${user.email}`
       }
     });
 
   } catch (error) {
-    console.error('Signup error:', error);
+    console.error('💥 Signup error:', error);
 
-    // Handle specific MongoDB errors
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -416,10 +608,76 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+// Add role to existing user
+app.post('/api/add-role', async (req, res) => {
+  try {
+    const { userId, role, profileData } = req.body;
+
+    if (!userId || !role) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID and role are required'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.roles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: `User already has the ${role} role`
+      });
+    }
+
+    user.roles.push(role);
+
+    if (role === 'mentor' && profileData) {
+      user.mentorProfile = {
+        ...user.mentorProfile,
+        ...profileData
+      };
+    } else if (role === 'mentee' && profileData) {
+      user.menteeProfile = {
+        ...user.menteeProfile,
+        ...profileData
+      };
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `${role} role added successfully`,
+      data: {
+        user: {
+          id: user._id,
+          roles: user.roles,
+          profileCompletion: user.profileCompletion
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Add role error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while adding role'
+    });
+  }
+});
+
 // Email verification route
 app.post('/api/verify-email', async (req, res) => {
   try {
     const { token, email } = req.body;
+
+    console.log('🔍 Verifying email:', { token, email });
 
     if (!token || !email) {
       return res.status(400).json({
@@ -434,6 +692,7 @@ app.post('/api/verify-email', async (req, res) => {
     });
 
     if (!user) {
+      console.log('❌ Invalid token or email');
       return res.status(404).json({
         success: false,
         message: 'Invalid verification token or email'
@@ -441,17 +700,19 @@ app.post('/api/verify-email', async (req, res) => {
     }
 
     if (user.isVerified) {
+      console.log('ℹ️  Email already verified');
       return res.status(200).json({
         success: true,
         message: 'Email is already verified'
       });
     }
 
-    // Update user verification status
     user.isVerified = true;
     user.accountStatus = 'active';
     user.verificationToken = undefined;
     await user.save();
+
+    console.log('✅ Email verified successfully');
 
     res.json({
       success: true,
@@ -461,7 +722,7 @@ app.post('/api/verify-email', async (req, res) => {
           id: user._id,
           fullName: user.fullName,
           email: user.email,
-          role: user.role,
+          roles: user.roles,
           isVerified: user.isVerified,
           accountStatus: user.accountStatus
         }
@@ -477,7 +738,6 @@ app.post('/api/verify-email', async (req, res) => {
   }
 });
 
-// Resend verification email
 app.post('/api/resend-verification', async (req, res) => {
   try {
     const { email } = req.body;
@@ -507,12 +767,10 @@ app.post('/api/resend-verification', async (req, res) => {
       });
     }
 
-    // Generate new verification token
     const newVerificationToken = generateVerificationToken();
     user.verificationToken = newVerificationToken;
     await user.save();
 
-    // Send verification email
     const emailSent = await sendVerificationEmail(user, newVerificationToken);
 
     if (!emailSent) {
@@ -536,28 +794,25 @@ app.post('/api/resend-verification', async (req, res) => {
   }
 });
 
-// Get user statistics (for admin dashboard)
 app.get('/api/stats', async (req, res) => {
   try {
-    const stats = await User.aggregate([
-      {
-        $group: {
-          _id: '$role',
-          count: { $sum: 1 },
-          verified: { $sum: { $cond: ['$isVerified', 1, 0] } }
-        }
-      }
-    ]);
-
     const totalUsers = await User.countDocuments();
     const verifiedUsers = await User.countDocuments({ isVerified: true });
+    
+    const mentorCount = await User.countDocuments({ roles: 'mentor' });
+    const menteeCount = await User.countDocuments({ roles: 'mentee' });
+    const dualRoleCount = await User.countDocuments({ 
+      roles: { $all: ['mentor', 'mentee'] }
+    });
 
     res.json({
       success: true,
       data: {
         totalUsers,
         verifiedUsers,
-        roleBreakdown: stats,
+        mentorCount,
+        menteeCount,
+        dualRoleCount,
         verificationRate: totalUsers > 0 ? (verifiedUsers / totalUsers * 100).toFixed(1) : 0
       }
     });
@@ -571,7 +826,6 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
   res.status(500).json({
@@ -581,7 +835,6 @@ app.use((error, req, res, next) => {
   });
 });
 
-// 404 handler 
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -589,9 +842,8 @@ app.use((req, res) => {
   });
 });
 
-// Database connection event handlers
 mongoose.connection.on('connected', () => {
-  console.log('📁 Connected to MongoDB (Signup Service)');
+  console.log('✅ Connected to MongoDB (Signup Service)');
 });
 
 mongoose.connection.on('error', (err) => {
@@ -602,14 +854,15 @@ mongoose.connection.on('disconnected', () => {
   console.log('📁 Disconnected from MongoDB');
 });
 
-// Start server
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
-  console.log(`🚀 MentorMesh Signup Server running on port ${PORT}`);
+  console.log(`\n🚀 MentorMesh Signup Server running on port ${PORT}`);
   console.log(`📧 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✉️  Email configured: ${!!(process.env.EMAIL_USER && process.env.EMAIL_PASS)}`);
+  console.log(`✨ Dual role support enabled`);
+  console.log(`📍 Health check: http://localhost:${PORT}/api/health\n`);
 });
 
-// Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🔄 Shutting down signup server gracefully...');
   await mongoose.connection.close();
