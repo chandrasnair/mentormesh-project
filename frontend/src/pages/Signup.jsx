@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { skillsAPI } from "../services/api";
 import "./Login.css";
 
 import boy from "../assets/boy.png";
@@ -13,17 +15,30 @@ const slides = [
 ];
 
 const roleFields = {
-  mentee: [],
+  mentee: [
+    { name: "interests", placeholder: "List your learning interests separated by commas (e.g., Python, Web Development)", type: "textarea", required: false },
+    { name: "goals", placeholder: "What are your learning goals?", type: "textarea", required: false },
+    { name: "currentLevel", placeholder: "Current skill level", type: "select", required: false, options: ["beginner", "intermediate", "advanced"] }
+  ],
   mentor: [
-    { name: "skills", placeholder: "List your skills separated by commas (e.g., Python, Data Science)", type: "textarea", required: true },
-    { name: "bio", placeholder: "Short bio / description about you", type: "textarea", required: true }
+    { name: "mentorSkills", placeholder: "List your skills separated by commas (e.g., Python, Data Science)", type: "textarea", required: true },
+    { name: "mentorBio", placeholder: "Short bio / description about you", type: "textarea", required: true },
+    { name: "expertise", placeholder: "Your area of expertise", type: "text", required: false },
+    { name: "experience", placeholder: "Years of experience", type: "number", required: false }
   ],
 };
 
 const Signup = () => {
   const [current, setCurrent] = useState(0);
-  const [role, setRole] = useState("mentee");
+  const [roles, setRoles] = useState(["mentee"]); // Changed to support multiple roles
   const [dynamicFields, setDynamicFields] = useState({});
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [availableSkills, setAvailableSkills] = useState([]);
+
+  const { signup, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -33,26 +48,76 @@ const Signup = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const handleFieldChange = (fieldName, value) => {
-    setDynamicFields((prev) => ({ ...prev, [fieldName]: value }));
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/home');
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Load available skills
+  useEffect(() => {
+    const loadSkills = async () => {
+      try {
+        const response = await skillsAPI.getSkills();
+        setAvailableSkills(response.skills);
+      } catch (error) {
+        console.error('Failed to load skills:', error);
+      }
+    };
+    loadSkills();
+  }, []);
+
+  const handleRoleChange = (role) => {
+    if (roles.includes(role)) {
+      setRoles(roles.filter(r => r !== role));
+    } else {
+      setRoles([...roles, role]);
+    }
   };
 
-  const handleSignupSubmit = (e) => {
+  const handleFieldChange = (fieldName, value) => {
+    setDynamicFields((prev) => ({ ...prev, [fieldName]: value }));
+    setError(''); // Clear error when user types
+  };
+
+  const handleSignupSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess(false);
 
     const formData = {
       fullName: e.target[0].value,
       email: e.target[1].value,
       password: e.target[2].value,
       confirmPassword: e.target[3].value,
-      role,
+      roles: roles,
       ...dynamicFields,
     };
 
-    console.log("Signup Data Submitted:", formData);
-
-    // Example: Send formData to backend API
-    // fetch('/api/signup', { method: 'POST', body: JSON.stringify(formData) })
+    try {
+      const result = await signup(formData);
+      
+      if (result.success) {
+        setSuccess(true);
+        // Redirect based on user roles
+        const user = result.user;
+        if (user.roles.includes('mentor')) {
+          navigate('/mentor-profile');
+        } else if (user.roles.includes('mentee')) {
+          navigate('/mentee-profile');
+        } else {
+          navigate('/home');
+        }
+      } else {
+        setError(result.error);
+      }
+    } catch (error) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -77,22 +142,69 @@ const Signup = () => {
             <input type="password" placeholder="Password" required />
             <input type="password" placeholder="Confirm Password" required />
 
-            <select value={role} onChange={(e) => setRole(e.target.value)} required>
-              <option value="mentee">Mentee</option>
-              <option value="mentor">Mentor</option>
-            </select>
+            <div className="role-selection">
+              <label>Select your role(s):</label>
+              <div className="role-checkboxes">
+                <label>
+                  <input 
+                    type="checkbox" 
+                    checked={roles.includes('mentee')}
+                    onChange={() => handleRoleChange('mentee')}
+                  />
+                  Mentee
+                </label>
+                <label>
+                  <input 
+                    type="checkbox" 
+                    checked={roles.includes('mentor')}
+                    onChange={() => handleRoleChange('mentor')}
+                  />
+                  Mentor
+                </label>
+              </div>
+            </div>
 
-            {roleFields[role].map((field) => (
-              <textarea
-                key={field.name}
-                placeholder={field.placeholder}
-                value={dynamicFields[field.name] || ""}
-                onChange={(e) => handleFieldChange(field.name, e.target.value)}
-                required={field.required}
-              />
-            ))}
+            {/* Render fields for each selected role */}
+            {roles.map(role => 
+              roleFields[role].map((field) => (
+                <div key={`${role}-${field.name}`}>
+                  {field.type === 'textarea' ? (
+                    <textarea
+                      placeholder={field.placeholder}
+                      value={dynamicFields[field.name] || ""}
+                      onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                      required={field.required}
+                    />
+                  ) : field.type === 'select' ? (
+                    <select
+                      value={dynamicFields[field.name] || ""}
+                      onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                      required={field.required}
+                    >
+                      <option value="">Select {field.placeholder}</option>
+                      {field.options.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={field.type}
+                      placeholder={field.placeholder}
+                      value={dynamicFields[field.name] || ""}
+                      onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                      required={field.required}
+                    />
+                  )}
+                </div>
+              ))
+            )}
 
-            <button type="submit">Sign Up</button>
+            {error && <div className="error-message">{error}</div>}
+            {success && <div className="success-message">Account created successfully!</div>}
+            
+            <button type="submit" disabled={loading || roles.length === 0}>
+              {loading ? 'Creating Account...' : 'Sign Up'}
+            </button>
           </form>
 
           <div className="extra-links">
