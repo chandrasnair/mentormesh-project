@@ -107,169 +107,175 @@ module.exports = (User, utils) => {
     }
   });
   // Signup route
-  router.post('/signup', async (req, res) => {
-    try {
-      const { 
-        fullName, email, password, confirmPassword, roles,
-        mentorSkills, mentorBio, expertise, experience,
-        interests, goals, currentLevel, menteeBio, learningGoals
-      } = req.body;
+ router.post('/signup', async (req, res) => {
+  try {
+    const { 
+      fullName, email, password, confirmPassword, roles,
+      mentorSkills, mentorBio, expertise, experience,
+      interests, goals, currentLevel, menteeBio, learningGoals
+    } = req.body;
 
-      // Input validation
-      const errors = [];
-      if (!fullName || fullName.trim().length < 2) {
-        errors.push('Full name must be at least 2 characters long');
-      }
-      if (!email || !/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(email)) {
-        errors.push('Please enter a valid email address');
-      }
-      if (!password || password.length < 6) {
-        errors.push('Password must be at least 6 characters long');
-      }
-      if (password !== confirmPassword) {
-        errors.push('Passwords do not match');
-      }
-      if (!roles || !Array.isArray(roles) || roles.length === 0) {
-        errors.push('Please select at least one role');
-      }
-
-      // Role-specific validations
-      if (roles && roles.includes('mentor')) {
-        let validatedSkills = [];
-        if (typeof mentorSkills === 'string') {
-          validatedSkills = mentorSkills.split(',').map(s => s.trim()).filter(s => s.length > 0);
-        } else if (Array.isArray(mentorSkills)) {
-          validatedSkills = mentorSkills.map(s => s?.toString().trim()).filter(s => s && s.length > 0);
-        }
-        if (validatedSkills.length === 0) {
-          errors.push('At least one skill is required for mentors');
-        }
-        if (!mentorBio || mentorBio.trim().length < 10) {
-          errors.push('Bio is required for mentors and must be at least 10 characters');
-        }
-      }
-
-      if (errors.length > 0) {
-        return res.status(400).json({ success: false, message: 'Validation failed', errors });
-      }
-
-      // Check if user exists
-      const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
-      if (existingUser) {
-        return res.status(409).json({ 
-          success: false,
-          message: 'An account with this email already exists'
-        });
-      }
-
-      // Hash password
-      const hashedPassword = await utils.hashPassword(password);
-      const verificationToken = utils.generateToken();
-      // Build user data
-      const userData = {
-        fullName: fullName.trim(),
-        email: email.toLowerCase().trim(),
-        password: hashedPassword,
-        roles: roles,
-        verificationToken,
-        mentorProfile: {},
-        menteeProfile: {}
-      };
-
-      // Add mentor profile
-      if (roles.includes('mentor')) {
-        let validatedSkills = [];
-        if (typeof mentorSkills === 'string') {
-          validatedSkills = mentorSkills.split(',').map(s => s.trim()).filter(s => s.length > 0);
-        } else if (Array.isArray(mentorSkills)) {
-          validatedSkills = mentorSkills.map(s => s?.toString().trim()).filter(s => s && s.length > 0);
-        }
-        userData.mentorProfile = {
-          skills: validatedSkills,
-          bio: mentorBio?.trim(),
-          expertise: expertise?.trim(),
-          experience: experience ? Number(experience) : undefined
-        };
-      }
-
-      // Add mentee profile
-      if (roles.includes('mentee')) {
-        let validatedInterests = [];
-        if (typeof interests === 'string') {
-          validatedInterests = interests.split(',').map(i => i.trim()).filter(i => i.length > 0);
-        } else if (Array.isArray(interests)) {
-          validatedInterests = interests.map(i => i?.trim()).filter(i => i && i.length > 0);
-        }
-        let validatedLearningGoals = [];
-        if (typeof learningGoals === 'string') {
-          validatedLearningGoals = learningGoals.split(',').map(g => g.trim()).filter(g => g.length > 0);
-        } else if (Array.isArray(learningGoals)) {
-          validatedLearningGoals = learningGoals.map(g => g?.trim()).filter(g => g && g.length > 0);
-        }
-        userData.menteeProfile = {
-          interests: validatedInterests,
-          goals: goals?.trim(),
-          currentLevel: currentLevel || 'beginner',
-          bio: menteeBio?.trim(),
-          learningGoals: validatedLearningGoals
-        };
-      }
-
-      // Create user
-      const user = new User(userData);
-      await user.save();
-
-      // Send verification email
-      let emailSent = false;
-      try {
-        emailSent = await utils.sendVerificationEmail(user, verificationToken);
-      } catch (error) {
-        console.error('Email sending failed:', error.message);
-      }
-
-      // Generate JWT
-      const token = utils.generateJWT(user);
-
-      // Build response
-      const responseData = {
-        id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        roles: user.roles,
-        isVerified: user.isVerified,
-        profileCompletion: user.profileCompletion,
-        accountStatus: user.accountStatus
-      };
-
-      if (user.roles.includes('mentor')) {
-        responseData.mentorProfile = user.mentorProfile;
-      }
-      if (user.roles.includes('mentee')) {
-        responseData.menteeProfile = user.menteeProfile;
-      }
-
-      res.status(201).json({
-        success: true,
-        message: 'Account created successfully!',
-        data: { token, user: responseData },
-        nextSteps: {
-          emailVerification: emailSent ? 'Verification email sent' : 'Email not sent',
-          profileCompletion: user.profileCompletion.overall < 100 ? 'Complete your profile' : 'Profile completed'
-        }
-      });
-
-    } catch (error) {
-      console.error('Signup error:', error);
-      if (error.name === 'ValidationError') {
-        const validationErrors = Object.values(error.errors).map(err => err.message);
-        return res.status(400).json({ success: false, message: 'Validation failed', errors: validationErrors });
-      }
-      if (error.code === 11000) {
-        return res.status(409).json({ success: false, message: 'An account with this email already exists' });
-      }
-      res.status(500).json({ success: false, message: 'Server error during account creation' });
+    // Input validation
+    const errors = [];
+    if (!fullName || fullName.trim().length < 2) {
+      errors.push('Full name must be at least 2 characters long');
     }
-  });
+    if (!email || !/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(email)) {
+      errors.push('Please enter a valid email address');
+    }
+    if (!password || password.length < 6) {
+      errors.push('Password must be at least 6 characters long');
+    }
+    if (password !== confirmPassword) {
+      errors.push('Passwords do not match');
+    }
+    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+      errors.push('Please select at least one role');
+    }
+    
+    // Prevent admin role creation through signup
+    if (roles && roles.includes('admin')) {
+      errors.push('Admin accounts cannot be created through signup');
+    }
+
+    // Role-specific validations
+    if (roles && roles.includes('mentor')) {
+      let validatedSkills = [];
+      if (typeof mentorSkills === 'string') {
+        validatedSkills = mentorSkills.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      } else if (Array.isArray(mentorSkills)) {
+        validatedSkills = mentorSkills.map(s => s?.toString().trim()).filter(s => s && s.length > 0);
+      }
+      if (validatedSkills.length === 0) {
+        errors.push('At least one skill is required for mentors');
+      }
+      if (!mentorBio || mentorBio.trim().length < 10) {
+        errors.push('Bio is required for mentors and must be at least 10 characters');
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, message: 'Validation failed', errors });
+    }
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existingUser) {
+      return res.status(409).json({ 
+        success: false,
+        message: 'An account with this email already exists'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await utils.hashPassword(password);
+    const verificationToken = utils.generateToken();
+    
+    // Build user data
+    const userData = {
+      fullName: fullName.trim(),
+      email: email.toLowerCase().trim(),
+      password: hashedPassword,
+      roles: roles,
+      verificationToken,
+      mentorProfile: {},
+      menteeProfile: {}
+    };
+
+    // Add mentor profile
+    if (roles.includes('mentor')) {
+      let validatedSkills = [];
+      if (typeof mentorSkills === 'string') {
+        validatedSkills = mentorSkills.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      } else if (Array.isArray(mentorSkills)) {
+        validatedSkills = mentorSkills.map(s => s?.toString().trim()).filter(s => s && s.length > 0);
+      }
+      userData.mentorProfile = {
+        skills: validatedSkills,
+        bio: mentorBio?.trim(),
+        expertise: expertise?.trim(),
+        experience: experience ? Number(experience) : undefined
+      };
+    }
+
+    // Add mentee profile
+    if (roles.includes('mentee')) {
+      let validatedInterests = [];
+      if (typeof interests === 'string') {
+        validatedInterests = interests.split(',').map(i => i.trim()).filter(i => i.length > 0);
+      } else if (Array.isArray(interests)) {
+        validatedInterests = interests.map(i => i?.trim()).filter(i => i && i.length > 0);
+      }
+      let validatedLearningGoals = [];
+      if (typeof learningGoals === 'string') {
+        validatedLearningGoals = learningGoals.split(',').map(g => g.trim()).filter(g => g.length > 0);
+      } else if (Array.isArray(learningGoals)) {
+        validatedLearningGoals = learningGoals.map(g => g?.trim()).filter(g => g && g.length > 0);
+      }
+      userData.menteeProfile = {
+        interests: validatedInterests,
+        goals: goals?.trim(),
+        currentLevel: currentLevel || 'beginner',
+        bio: menteeBio?.trim(),
+        learningGoals: validatedLearningGoals
+      };
+    }
+
+    // Create user
+    const user = new User(userData);
+    await user.save();
+
+    // Send verification email
+    let emailSent = false;
+    try {
+      emailSent = await utils.sendVerificationEmail(user, verificationToken);
+    } catch (error) {
+      console.error('Email sending failed:', error.message);
+    }
+
+    // Generate JWT
+    const token = utils.generateJWT(user);
+
+    // Build response
+    const responseData = {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      roles: user.roles,
+      isVerified: user.isVerified,
+      profileCompletion: user.profileCompletion,
+      accountStatus: user.accountStatus
+    };
+
+    if (user.roles.includes('mentor')) {
+      responseData.mentorProfile = user.mentorProfile;
+    }
+    if (user.roles.includes('mentee')) {
+      responseData.menteeProfile = user.menteeProfile;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully!',
+      data: { token, user: responseData },
+      nextSteps: {
+        emailVerification: emailSent ? 'Verification email sent' : 'Email not sent',
+        profileCompletion: user.profileCompletion.overall < 100 ? 'Complete your profile' : 'Profile completed'
+      }
+    });
+
+  } catch (error) {
+    console.error('Signup error:', error);
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ success: false, message: 'Validation failed', errors: validationErrors });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, message: 'An account with this email already exists' });
+    }
+    res.status(500).json({ success: false, message: 'Server error during account creation' });
+  }
+});
 
   // Login route
 router.post('/login', async (req, res) => {
