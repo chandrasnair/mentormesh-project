@@ -195,3 +195,86 @@ form textarea:focus {
   border: 1px solid #1e3932;
   box-shadow: 0 0 5px rgba(30, 57, 50, 0.4);
 }
+
+/* Select dropdown styling */
+form select {
+  width: 100%;
+  padding: 0.9rem;
+  margin: 0.6rem 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: white;
+  cursor: pointer;
+}
+
+form select:focus {
+  outline: none;
+  border: 1px solid #1e3932;
+  box-shadow: 0 0 5px rgba(30, 57, 50, 0.4);
+}
+
+/* Role selection styling */
+.role-selection {
+  margin: 1rem 0;
+  text-align: left;
+}
+
+.role-selection label {
+  display: block;
+  font-weight: 600;
+  color: #1e3932;
+  margin-bottom: 0.5rem;
+}
+
+.role-checkboxes {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.role-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: #444;
+  cursor: pointer;
+}
+
+.role-checkboxes input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+/* Error and success messages */
+.error-message {
+  background-color: #fee;
+  color: #c33;
+  padding: 0.8rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  border: 1px solid #fcc;
+}
+
+.success-message {
+  background-color: #efe;
+  color: #363;
+  padding: 0.8rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  border: 1px solid #cfc;
+}
+
+/* Disabled button styling */
+form button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+form button:disabled:hover {
+  background-color: #ccc;
+}

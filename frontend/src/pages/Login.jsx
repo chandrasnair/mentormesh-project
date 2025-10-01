@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import "./Login.css";
 
 import boy from "../assets/boy.png";
@@ -14,6 +15,15 @@ const slides = [
 
 const Login = () => {
   const [current, setCurrent] = useState(0);
+  const [formData, setFormData] = useState({
+    emailOrUsername: '',
+    password: ''
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  const { login, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -22,6 +32,48 @@ const Login = () => {
 
     return () => clearInterval(timer);
   }, []);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/home');
+    }
+  }, [isAuthenticated, navigate]);
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+    setError(''); // Clear error when user types
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await login(formData.emailOrUsername, formData.password);
+      
+      if (result.success) {
+        const user = result.user;
+        if (user.roles.includes('mentor')) {
+          navigate('/mentor-profile');
+        } else if (user.roles.includes('mentee')) {
+          navigate('/mentee-profile');
+        } else {
+          navigate('/home');
+        }
+      } else {
+        setError(result.error);
+      }
+    } catch (error) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="login-container">
@@ -42,10 +94,27 @@ const Login = () => {
           <h1 className="brand-name">MentorMesh</h1>
           <h2 className="welcome-text">Welcome</h2>
 
-          <form>
-            <input type="text" placeholder="Email or Username" required />
-            <input type="password" placeholder="Password" required />
-            <button type="submit">Login</button>
+          <form onSubmit={handleSubmit}>
+            <input 
+              type="text" 
+              name="emailOrUsername"
+              placeholder="Email or Username" 
+              value={formData.emailOrUsername}
+              onChange={handleChange}
+              required 
+            />
+            <input 
+              type="password" 
+              name="password"
+              placeholder="Password" 
+              value={formData.password}
+              onChange={handleChange}
+              required 
+            />
+            {error && <div className="error-message">{error}</div>}
+            <button type="submit" disabled={loading}>
+              {loading ? 'Logging in...' : 'Login'}
+            </button>
           </form>
 
           <div className="extra-links">
