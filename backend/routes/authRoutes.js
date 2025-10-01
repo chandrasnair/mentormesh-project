@@ -7,7 +7,105 @@ const router = express.Router();
 // This function will be called from your server file
 // Pass in the User model and utility functions
 module.exports = (User, utils) => {
-  
+  // Admin creation endpoint - Add this to your routes file
+
+  router.post('/create-admin', async (req, res) => {
+    try {
+      const { fullName, email, password, confirmPassword } = req.body;
+
+      // Input validation
+      const errors = [];
+      if (!fullName || fullName.trim().length < 2) {
+        errors.push('Full name must be at least 2 characters long');
+      }
+      if (!email || !/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(email)) {
+        errors.push('Please enter a valid email address');
+      }
+      if (!password || password.length < 6) {
+        errors.push('Password must be at least 6 characters long');
+      }
+      if (password !== confirmPassword) {
+        errors.push('Passwords do not match');
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Validation failed', 
+          errors 
+        });
+      }
+
+      // Check if user exists
+      const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+      if (existingUser) {
+        return res.status(409).json({ 
+          success: false,
+          message: 'An account with this email already exists'
+        });
+      }
+
+      // Hash password
+      const hashedPassword = await utils.hashPassword(password);
+
+      // Create admin user data
+      const adminData = {
+        fullName: fullName.trim(),
+        email: email.toLowerCase().trim(),
+        password: hashedPassword,
+        roles: ['admin'],
+        isVerified: true,
+        accountStatus: 'active',
+        verificationToken: null,
+        mentorProfile: {},
+        menteeProfile: {}
+      };
+
+      // Create admin user
+      const adminUser = new User(adminData);
+      await adminUser.save();
+
+      // Generate JWT
+      const token = utils.generateJWT(adminUser);
+
+      // Build response
+      const responseData = {
+        id: adminUser._id,
+        fullName: adminUser.fullName,
+        email: adminUser.email,
+        roles: adminUser.roles,
+        isVerified: adminUser.isVerified,
+        accountStatus: adminUser.accountStatus
+      };
+
+      res.status(201).json({
+        success: true,
+        message: 'Admin account created successfully!',
+        data: { token, user: responseData }
+      });
+
+    } catch (error) {
+      console.error('Admin creation error:', error);
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.values(error.errors).map(err => err.message);
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Validation failed', 
+          errors: validationErrors 
+        });
+      }
+      if (error.code === 11000) {
+        return res.status(409).json({ 
+          success: false, 
+          message: 'An account with this email already exists' 
+        });
+      }
+      res.status(500).json({ 
+        success: false, 
+        message: 'Server error during admin account creation' 
+      });
+    }
+  });
   // Signup route
   router.post('/signup', async (req, res) => {
     try {
