@@ -280,12 +280,20 @@ module.exports = (User, utils) => {
   // Login route
 router.post('/login', async (req, res) => {
   try {
-    const { emailOrUsername, password } = req.body;
+    const { emailOrUsername, password, role } = req.body;
 
     if (!emailOrUsername || !password) {
       return res.status(400).json({
         success: false,
         message: 'Email/username and password are required'
+      });
+    }
+
+    // Validate role input if provided
+    if (role && !['mentor', 'mentee'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role specified. Must be either "mentor" or "mentee"'
       });
     }
 
@@ -310,8 +318,16 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // NEW: Block pending mentors from logging in
-    if (user.accountStatus === 'pending' && user.roles.includes('mentor')) {
+    // If role is specified, check if user has that role
+    if (role && !user.roles.includes(role)) {
+      return res.status(403).json({
+        success: false,
+        message: `You don't have ${role} access. Please check your role selection.`
+      });
+    }
+
+    // Block pending mentors only when logging in as mentor
+    if (role === 'mentor' && user.accountStatus === 'pending' && user.roles.includes('mentor')) {
       return res.status(403).json({
         success: false,
         message: 'Your mentor application is pending admin approval. You will be notified via email once approved.'
@@ -339,7 +355,8 @@ router.post('/login', async (req, res) => {
       isVerified: user.isVerified,
       accountStatus: user.accountStatus,
       profileCompletion: user.profileCompletion,
-      lastLogin: user.lastLogin
+      lastLogin: user.lastLogin,
+      activeRole: role || user.roles[0] // Set active role or default to first role
     };
 
     if (user.roles.includes('mentor')) {
