@@ -184,6 +184,39 @@ module.exports = (User, authMiddleware) => {
     }
   });
 
+  // Get public mentor profile by ID
+  router.get('/mentors/:mentorId', async (req, res) => {
+    try {
+      const { mentorId } = req.params;
+
+      const mentor = await User.findOne({
+        _id: mentorId,
+        roles: 'mentor',
+        accountStatus: 'active',
+        isVerified: true
+      }).select('fullName email mentorProfile createdAt lastLogin');
+
+      if (!mentor) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mentor not found or not available'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { mentor }
+      });
+
+    } catch (error) {
+      console.error('Get mentor error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error while fetching mentor'
+      });
+    }
+  });
+
   // Get user statistics
   router.get('/stats', async (req, res) => {
     try {
