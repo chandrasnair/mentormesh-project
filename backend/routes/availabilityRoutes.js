@@ -4,7 +4,7 @@
 const express = require('express');
 const router = express.Router();
 
-module.exports = (Availability) => {
+module.exports = (Availability, User) => {
 
   // Create single availability slot
   router.post('/', async (req, res) => {
@@ -211,59 +211,120 @@ module.exports = (Availability) => {
     }
   });
 
-  // Search available mentors
-  router.get('/search', async (req, res) => {
+  // Search/filter mentors (public or protected based on your needs)
+  router.get('/mentors/search', async (req, res) => {
     try {
-      const { startDate, endDate, skills, minExperience } = req.query;
+      const { 
+        skills, 
+        minExperience, 
+        maxExperience,
+        expertise,
+        search,
+        sortBy = 'experience',
+        limit = 20,
+        page = 1
+      } = req.query;
 
-      const query = { status: 'available', isBooked: false };
+      // Build query - only active, approved mentors
+      const query = {
+        roles: 'mentor',
+        accountStatus: 'active',
+        isVerified: true
+      };
 
-      if (startDate || endDate) {
-        query.date = {};
-        if (startDate) query.date.$gte = new Date(startDate);
-        if (endDate) query.date.$lte = new Date(endDate);
+      // Filter by skills (comma-separated string or array)
+      if (skills) {
+        const skillsArray = typeof skills === 'string' 
+          ? skills.split(',').map(s => s.trim()).filter(s => s)
+          : skills;
+        
+        if (skillsArray.length > 0) {
+          query['mentorProfile.skills'] = { 
+            $in: skillsArray.map(skill => new RegExp(skill, 'i'))
+          };
+        }
       }
 
-      let availability = await Availability.find(query)
-        .populate({
-          path: 'mentorId',
-          select: 'fullName email mentorProfile',
-          match: {
-            ...(skills && { 'mentorProfile.skills': { $in: skills.split(',') } }),
-            ...(minExperience && { 'mentorProfile.experience': { $gte: parseInt(minExperience) } })
-          }
-        })
-        .sort({ date: 1, startTime: 1 });
+      // Filter by experience range
+      if (minExperience !== undefined) {
+        query['mentorProfile.experience'] = { 
+          ...query['mentorProfile.experience'],
+          $gte: parseInt(minExperience) 
+        };
+      }
+      if (maxExperience !== undefined) {
+        query['mentorProfile.experience'] = { 
+          ...query['mentorProfile.experience'],
+          $lte: parseInt(maxExperience) 
+        };
+      }
 
-      availability = availability.filter(slot => slot.mentorId !== null);
+      // Filter by expertise (partial match)
+      if (expertise) {
+        query['mentorProfile.expertise'] = new RegExp(expertise, 'i');
+      }
 
-      const mentorMap = {};
-      availability.forEach(slot => {
-        const mentorId = slot.mentorId._id.toString();
-        if (!mentorMap[mentorId]) {
-          mentorMap[mentorId] = { mentor: slot.mentorId, availableSlots: [] };
-        }
-        mentorMap[mentorId].availableSlots.push({
-          id: slot._id,
-          date: slot.date,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          timezone: slot.timezone
-        });
-      });
+      // Search by name or bio
+      if (search) {
+        query.$or = [
+          { fullName: new RegExp(search, 'i') },
+          { 'mentorProfile.bio': new RegExp(search, 'i') }
+        ];
+      }
 
-      const mentors = Object.values(mentorMap);
+      // Sorting
+      let sort = {};
+      switch (sortBy) {
+        case 'experience':
+          sort = { 'mentorProfile.experience': -1 };
+          break;
+        case 'name':
+          sort = { fullName: 1 };
+          break;
+        case 'newest':
+          sort = { createdAt: -1 };
+          break;
+        default:
+          sort = { 'mentorProfile.experience': -1 };
+      }
+
+      // Pagination
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      // Execute query
+      const mentors = await User.find(query)
+        .select('fullName email mentorProfile createdAt lastLogin')
+        .sort(sort)
+        .limit(parseInt(limit))
+        .skip(skip);
+
+      // Get total count for pagination
+      const totalCount = await User.countDocuments(query);
+      const totalPages = Math.ceil(totalCount / parseInt(limit));
 
       res.json({
         success: true,
-        data: { count: mentors.length, totalSlots: availability.length, mentors }
+        data: {
+          mentors,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages,
+            totalCount,
+            limit: parseInt(limit),
+            hasMore: parseInt(page) < totalPages
+          }
+        }
       });
 
     } catch (error) {
-      console.error('Search mentors error:', error);
-      res.status(500).json({ success: false, message: 'Server error while searching mentors' });
+      console.error('Mentor search error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error while searching mentors'
+      });
     }
   });
+
 
   // Get single availability slot by ID
   router.get('/:id', async (req, res) => {
