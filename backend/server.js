@@ -11,7 +11,7 @@ const utils = require('./utils/helpers');
 const User = require('./models/User');
 const Availability = require('./models/Availability');
 const Feedback = require('./models/Feedback');
-
+const Review = require('./models/Review');
 const app = express();
 
 // =============================================
@@ -73,14 +73,14 @@ const userRoutes = require('./routes/userRoutes');
 const availabilityRoutes = require('./routes/availabilityRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
-
+const reviewRoutes = require('./routes/reviewRoutes')
 // Pass centralized utils to routes
 app.use('/api', authRoutes(User, utils));
 app.use('/api', userRoutes(User, authMiddleware));
 app.use('/api/availability', availabilityRoutes(Availability, User));
 app.use('/api/admin', adminRoutes(User, authMiddleware, utils));
 app.use('/api/feedback', authMiddleware, feedbackRoutes(Feedback, User, Availability, mongoose));
-
+app.use('/api/reviews', reviewRoutes(Review, User, authMiddleware));
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ 
