@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "./Login.css";
 
@@ -16,67 +16,102 @@ const slides = [
 const Login = () => {
   const [current, setCurrent] = useState(0);
   const [formData, setFormData] = useState({
-    emailOrUsername: '',
-    password: ''
+    emailOrUsername: "",
+    password: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [showAddRoleSection, setShowAddRoleSection] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [existingRoles, setExistingRoles] = useState([]);
   const [loading, setLoading] = useState(false);
-  
-  const { login, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
 
+  const { login, addRole } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Slide animation
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrent((prev) => (prev + 1) % slides.length);
     }, 4000);
-
     return () => clearInterval(timer);
   }, []);
 
-  // Redirect if already authenticated
+  // Handle messages from signup or other pages
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/home');
+    if (location.state?.message) {
+      setSuccess(location.state.message);
+      setTimeout(() => setSuccess(""), 5000);
     }
-  }, [isAuthenticated, navigate]);
+    if (location.state?.email) {
+      setFormData(prev => ({ ...prev, emailOrUsername: location.state.email }));
+      setUserEmail(location.state.email);
+      // Show add role section immediately if redirected from signup with existing email
+      if (location.state?.message?.toLowerCase().includes("already registered")) {
+        setShowAddRoleSection(true);
+        // We don't know the existing roles yet, so we'll handle this in the add role page
+        setExistingRoles([]);
+      }
+    }
+  }, [location.state]);
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
-    setError(''); // Clear error when user types
+    setError("");
+    setSuccess("");
+    setShowAddRoleSection(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
+    setSuccess("");
+    setShowAddRoleSection(false);
 
     try {
       const result = await login(formData.emailOrUsername, formData.password);
-      
+
       if (result.success) {
-        const user = result.user;
-        if (user.roles.includes('mentor')) {
-          navigate('/mentor-profile');
-        } else if (user.roles.includes('mentee')) {
-          navigate('/mentee-profile');
+        const loggedUser = result.user;
+
+        // Redirect based on roles - always go to home or select-role
+        if (loggedUser.roles.length > 1) {
+          navigate("/select-role");
         } else {
-          navigate('/home');
+          navigate("/home");
         }
       } else {
         setError(result.error);
+        // Show add role section if login failed due to missing credentials
+        if (formData.emailOrUsername) {
+          setUserEmail(formData.emailOrUsername);
+          setShowAddRoleSection(true);
+        }
       }
-    } catch (error) {
-      setError('An unexpected error occurred. Please try again.');
+    } catch (err) {
+      setError("An unexpected error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleAddRoleRedirect = () => {
+    navigate("/add-role", { 
+      state: { 
+        email: userEmail,
+        existingRoles: existingRoles 
+      }
+    });
+  };
+
   return (
     <div className="login-container">
+      {/* LEFT PANEL with slides */}
       <div className="left-panel">
         {slides.map((slide, index) => (
           <div
@@ -89,36 +124,57 @@ const Login = () => {
         ))}
       </div>
 
+      {/* RIGHT PANEL with login box */}
       <div className="right-panel">
         <div className="login-box">
           <h1 className="brand-name">MentorMesh</h1>
           <h2 className="welcome-text">Welcome</h2>
 
           <form onSubmit={handleSubmit}>
-            <input 
-              type="text" 
+            <input
+              type="text"
               name="emailOrUsername"
-              placeholder="Email or Username" 
+              placeholder="Email or Username"
               value={formData.emailOrUsername}
               onChange={handleChange}
-              required 
+              required
             />
-            <input 
-              type="password" 
+            <input
+              type="password"
               name="password"
-              placeholder="Password" 
+              placeholder="Password"
               value={formData.password}
               onChange={handleChange}
-              required 
+              required
             />
+
             {error && <div className="error-message">{error}</div>}
+            {success && <div className="success-message">{success}</div>}
+
             <button type="submit" disabled={loading}>
-              {loading ? 'Logging in...' : 'Login'}
+              {loading ? "Logging in..." : "Login"}
             </button>
           </form>
 
+          {/* Add Role Option */}
+          {showAddRoleSection && (
+            <div className="add-role-section">
+              <div className="add-role-info">
+                <p>Don't have an account with the required role?</p>
+                <button 
+                  onClick={handleAddRoleRedirect} 
+                  disabled={loading}
+                  className="add-role-btn"
+                >
+                  Add Role
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="extra-links">
-            <Link to="#">Forgot Password?</Link> | <Link to="/signup">Create Account</Link>
+            <Link to="#">Forgot Password?</Link> |{" "}
+            <Link to="/signup">Create Account</Link>
           </div>
         </div>
       </div>
@@ -127,5 +183,3 @@ const Login = () => {
 };
 
 export default Login;
-
-

@@ -1,85 +1,56 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import MentorCard from "../components/MentorCard";
-
-const testimonials = [
-  {
-    id: "t1",
-    text:
-      "Found an amazing mentor for machine learning. My confidence skyrocketed!",
-    author: "Aisha, Mentee",
-  },
-  {
-    id: "t2",
-    text:
-      "Clear guidance and actionable feedback helped me crack my interview.",
-    author: "Rahul, Mentee",
-  },
-  {
-    id: "t3",
-    text:
-      "As a mentor, the platform makes it easy to manage sessions and impact lives.",
-    author: "Grace, Mentor",
-  },
-];
-
-// Mock mentors data (would come from API later)
-const allMentors = [
-  {
-    mentor_id: "m1",
-    name: "Dr. Sarah Wilson",
-    skills: ["Machine Learning", "Deep Learning", "AI"],
-    rating: 4.9,
-    sessions_completed: 156,
-    availability: "Mon-Fri 9AM-5PM",
-  },
-  {
-    mentor_id: "m2",
-    name: "John Smith",
-    skills: ["Data Structures", "Algorithms", "Python"],
-    rating: 4.8,
-    sessions_completed: 89,
-    availability: "Tue-Thu 2PM-6PM",
-  },
-  {
-    mentor_id: "m3",
-    name: "Emily Chen",
-    skills: ["Web Development", "React", "JavaScript"],
-    rating: 4.7,
-    sessions_completed: 124,
-    availability: "Mon-Wed-Fri 10AM-4PM",
-  },
-  {
-    mentor_id: "m4",
-    name: "David Kim",
-    skills: ["System Design", "Backend", "Node.js"],
-    rating: 4.95,
-    sessions_completed: 210,
-    availability: "Flexible",
-  },
-];
+import { mentorsAPI, testimonialsAPI } from "../services/api";
 
 const Home = () => {
   const navigate = useNavigate();
   const [activeIndex, setActiveIndex] = useState(0);
   const [search, setSearch] = useState("");
+  const [testimonials, setTestimonials] = useState([]);
+  const [featuredMentors, setFeaturedMentors] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch testimonials and featured mentors on component mount
+  useEffect(() => {
+    const fetchHomeData = async () => {
+      try {
+        const [testimonialsResponse, mentorsResponse] = await Promise.all([
+          testimonialsAPI.getAll(),
+          mentorsAPI.getFeatured()
+        ]);
+
+        if (testimonialsResponse.success) {
+          setTestimonials(testimonialsResponse.data.testimonials);
+        }
+
+        if (mentorsResponse.success) {
+          setFeaturedMentors(mentorsResponse.data.mentors);
+        }
+      } catch (error) {
+        console.error("Error fetching home data:", error);
+        // Fallback to empty arrays if API fails
+        setTestimonials([]);
+        setFeaturedMentors([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHomeData();
+  }, []);
 
   // Auto-advance testimonials every 3 seconds
   useEffect(() => {
+    if (testimonials.length === 0) return;
+
     const timer = setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % testimonials.length);
     }, 3000);
     return () => clearInterval(timer);
-  }, []);
-
-  // Featured mentors: top by rating
-  const featuredMentors = useMemo(() => {
-    return [...allMentors]
-      .sort((a, b) => b.rating - a.rating)
-      .slice(0, 3);
-  }, []);
+  }, [testimonials.length]);
 
   const submitSearch = (e) => {
     e?.preventDefault();
@@ -107,21 +78,33 @@ const Home = () => {
             {/* Search moved to Navbar - keeping hero clean */}
 
             <div className="mt-6 relative h-28">
-              {testimonials.map((t, index) => (
-                <div
-                  key={t.id}
-                  className={`absolute inset-0 transition-opacity duration-500 ${
-                    index === activeIndex ? "opacity-100" : "opacity-0"
-                  }`}
-                >
-                  <div className="h-full rounded-xl bg-white ring-1 ring-gray-200 shadow flex items-center p-4">
-                    <p className="text-gray-800">
-                      <span className="italic">“{t.text}”</span>
-                      <span className="block mt-1 text-sm text-gray-500">— {t.author}</span>
-                    </p>
-                  </div>
+              {loading ? (
+                <div className="h-full rounded-xl bg-white ring-1 ring-gray-200 shadow flex items-center justify-center p-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primaryGreen"></div>
                 </div>
-              ))}
+              ) : testimonials.length > 0 ? (
+                testimonials.map((t, index) => (
+                  <div
+                    key={t.id}
+                    className={`absolute inset-0 transition-opacity duration-500 ${
+                      index === activeIndex ? "opacity-100" : "opacity-0"
+                    }`}
+                  >
+                    <div className="h-full rounded-xl bg-white ring-1 ring-gray-200 shadow flex items-center p-4">
+                      <p className="text-gray-800">
+                        <span className="italic">"{t.text}"</span>
+                        <span className="block mt-1 text-sm text-gray-500">— {t.author}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="h-full rounded-xl bg-white ring-1 ring-gray-200 shadow flex items-center p-4">
+                  <p className="text-gray-800 italic">
+                    "Success stories coming soon - join our community and share your experience!"
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -166,5 +149,3 @@ const Home = () => {
 };
 
 export default Home;
-
-

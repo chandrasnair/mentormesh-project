@@ -14,6 +14,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
+  const [activeRole, setActiveRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -25,14 +26,19 @@ export const AuthProvider = ({ children }) => {
         const storedUser = utils.getUserData();
 
         if (storedToken && storedUser) {
-          // Verify token is still valid
           try {
             const response = await authAPI.verifyToken(storedToken);
             if (response.success) {
               setToken(storedToken);
               setUser(storedUser);
+
+              if (storedUser.roles?.length === 1) {
+                setActiveRole(storedUser.roles[0]);
+              } else {
+                const storedRole = utils.getActiveRole();
+                if (storedRole) setActiveRole(storedRole);
+              }
             } else {
-              // Token is invalid, clear storage
               utils.clearAuth();
             }
           } catch (error) {
@@ -51,33 +57,41 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
 
-  // Login function
-  const login = async (emailOrUsername, password) => {
+  // Login
+  const login = async (emailOrUsername, password, requestedRole) => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await authAPI.login({
-        emailOrUsername,
-        password
-      });
+      const response = await authAPI.login({ emailOrUsername, password, requestedRole });
 
       if (response.success) {
-        const { user: userData, token: authToken } = response.data;
-        
-        // Store in localStorage
+        const userData = response.data.user;
+        const authToken = response.data.token;
+
         utils.setToken(authToken);
         utils.setUserData(userData);
-        
-        // Update state
+
         setToken(authToken);
         setUser(userData);
-        
+
+        if (userData.roles?.length === 1) {
+          setActiveRole(userData.roles[0]);
+          utils.setActiveRole(userData.roles[0]);
+        }
+
         return { success: true, user: userData };
       } else {
+        // "role missing" handling
+        if (response.message?.toLowerCase().includes("role missing")) {
+          return { success: false, roleMissing: true };
+        }
         throw new Error(response.message);
       }
     } catch (error) {
+      if (error.message.toLowerCase().includes("role missing")) {
+        return { success: false, roleMissing: true };
+      }
       setError(error.message);
       return { success: false, error: error.message };
     } finally {
@@ -85,7 +99,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Signup function
+  // Signup
   const signup = async (userData) => {
     try {
       setLoading(true);
@@ -94,26 +108,40 @@ export const AuthProvider = ({ children }) => {
       const response = await authAPI.signup(userData);
 
       if (response.success) {
-        const { user: newUser, token: authToken } = response.data;
-        
-        // Store in localStorage
+        const newUser = response.data.user;
+        const authToken = response.data.token;
+
         utils.setToken(authToken);
         utils.setUserData(newUser);
-        
-        // Update state
+
         setToken(authToken);
         setUser(newUser);
-        
-        return { 
-          success: true, 
-          user: newUser,
-          nextSteps: response.nextSteps,
-          debug: response.debug
-        };
+
+        if (newUser.roles?.length === 1) {
+          setActiveRole(newUser.roles[0]);
+          utils.setActiveRole(newUser.roles[0]);
+        }
+
+        return { success: true, user: newUser };
       } else {
+        // detect duplicate email
+        if (response.message?.toLowerCase().includes("already exists")) {
+          return { 
+            success: false, 
+            emailExists: true,
+            message: response.message 
+          };
+        }
         throw new Error(response.message);
       }
     } catch (error) {
+      if (error.message?.toLowerCase().includes("already exists")) {
+        return { 
+          success: false, 
+          emailExists: true,
+          message: error.message 
+        };
+      }
       setError(error.message);
       return { success: false, error: error.message };
     } finally {
@@ -121,31 +149,28 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Logout function
-  const logout = () => {
-    utils.clearAuth();
-    setUser(null);
-    setToken(null);
-    setError(null);
-  };
-
-  // Update user profile
-  const updateProfile = async (profileData) => {
+  // Add role for existing user (uses email instead of userId)
+  const addRole = async (email, role, profileData = {}) => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await authAPI.updateProfile(token, profileData);
+      const response = await authAPI.addRole(email, role, profileData);
 
       if (response.success) {
-        const updatedUser = response.data.user;
-        
-        // Update localStorage
-        utils.setUserData(updatedUser);
-        
-        // Update state
-        setUser(updatedUser);
-        
+        const updatedUser = response.data?.user;
+
+        // Only update context if this is for the current logged-in user
+        if (user && user.email === email) {
+          setUser(updatedUser);
+          utils.setUserData(updatedUser);
+
+          if (!activeRole) {
+            setActiveRole(role);
+            utils.setActiveRole(role);
+          }
+        }
+
         return { success: true, user: updatedUser };
       } else {
         throw new Error(response.message);
@@ -158,102 +183,62 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Verify email
-  const verifyEmail = async (token, email) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await authAPI.verifyEmail(token, email);
-
-      if (response.success) {
-        // Update user verification status
-        if (user) {
-          const updatedUser = { ...user, isVerified: true };
-          utils.setUserData(updatedUser);
-          setUser(updatedUser);
-        }
-        
-        return { success: true };
-      } else {
-        throw new Error(response.message);
-      }
-    } catch (error) {
-      setError(error.message);
-      return { success: false, error: error.message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Forgot password
-  const forgotPassword = async (email) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await authAPI.forgotPassword(email);
-
-      if (response.success) {
-        return { success: true, message: response.message };
-      } else {
-        throw new Error(response.message);
-      }
-    } catch (error) {
-      setError(error.message);
-      return { success: false, error: error.message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Reset password
-  const resetPassword = async (token, email, newPassword) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await authAPI.resetPassword(token, email, newPassword);
-
-      if (response.success) {
-        return { success: true, message: response.message };
-      } else {
-        throw new Error(response.message);
-      }
-    } catch (error) {
-      setError(error.message);
-      return { success: false, error: error.message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Clear error
-  const clearError = () => {
+  // Logout
+  const logout = () => {
+    utils.clearAuth();
+    setUser(null);
+    setToken(null);
+    setActiveRole(null);
     setError(null);
+  };
+
+  // Update profile
+  const updateProfile = async (profileData) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await authAPI.updateProfile(token, profileData);
+
+      if (response.success) {
+        const updatedUser = response.data.user;
+        utils.setUserData(updatedUser);
+        setUser(updatedUser);
+        return { success: true, user: updatedUser };
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (error) {
+      setError(error.message);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Switch role
+  const selectRole = (role) => {
+    setActiveRole(role);
+    utils.setActiveRole(role);
   };
 
   const value = {
     user,
     token,
+    activeRole,
+    setActiveRole: selectRole,
     loading,
     error,
     isAuthenticated: !!user && !!token,
     login,
     signup,
+    addRole,
     logout,
     updateProfile,
-    verifyEmail,
-    forgotPassword,
-    resetPassword,
-    clearError
+    clearError: () => setError(null)
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export default AuthContext;

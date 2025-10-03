@@ -1,71 +1,172 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import MentorCard from "../components/MentorCard";
 import SessionCard from "../components/SessionCard";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import RequestSessionModal from "../components/RequestSessionModal";
+import { mentorsAPI, utils, authAPI, sessionsAPI } from "../services/api";
 
 const MenteeDashboard = () => {
-    const [menteeData, setMenteeData] = useState(null);
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    const [menteeData, setMenteeData] = useState({
+        name: "",
+        interests: [],
+        upcomingSessions: [],
+        pendingRequests: [],
+        availableMentors: []
+    });
     const [showRequestModal, setShowRequestModal] = useState(false);
     const [selectedMentor, setSelectedMentor] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    // Redirect if not authenticated or not a mentee
+    useEffect(() => {
+        if (!user) {
+            navigate("/login");
+            return;
+        }
+        if (!user.roles.includes("mentee")) {
+            navigate("/home");
+            return;
+        }
+    }, [user, navigate]);
 
     useEffect(() => {
-        const mockData = {
-            name: "Alice Johnson",
-            interests: ["Machine Learning", "Data Science", "Python Programming"],
-            upcomingSessions: [
-                {
-                    session_id: "sess001",
-                    mentor_name: "Dr. Sarah Wilson",
-                    skill: "Machine Learning",
-                    date: "2025-01-15",
-                    time: "10:00 - 11:00",
-                    status: "Confirmed"
-                },
-                {
-                    session_id: "sess002", 
-                    mentor_name: "John Smith",
-                    skill: "Data Structures",
-                    date: "2025-01-18",
-                    time: "14:00 - 15:00",
-                    status: "Pending"
+        const fetchMenteeData = async () => {
+            if (!user) return;
+
+            const token = utils.getToken();
+            if (!token) return;
+
+            try {
+                // Fetch user profile for interests, sessions, and mentor requests
+                const [profileResponse, mentorsResponse, sessionsResponse, requestsResponse] = await Promise.all([
+                    authAPI.getProfile(token),
+                    mentorsAPI.getFeatured(6), // Get more mentors for the dashboard
+                    sessionsAPI.getMenteeSessions(token), // Get mentee's scheduled sessions
+                    sessionsAPI.getMenteeRequests(token) // Get mentee's sent requests
+                ]);
+
+                if (profileResponse.success) {
+                    const userProfile = profileResponse.data.user;
+                    setMenteeData(prev => ({
+                        ...prev,
+                        name: userProfile.fullName,
+                        interests: userProfile.menteeProfile?.interests || []
+                    }));
                 }
-            ],
-            availableMentors: [
-                {
-                    mentor_id: "mentor001",
-                    name: "Dr. Sarah Wilson",
-                    skills: ["Machine Learning", "Deep Learning", "AI"],
-                    rating: 4.9,
-                    sessions_completed: 156,
-                    availability: "Mon-Fri 9AM-5PM"
-                },
-                {
-                    mentor_id: "mentor002",
-                    name: "John Smith",
-                    skills: ["Data Structures", "Algorithms", "Python"],
-                    rating: 4.8,
-                    sessions_completed: 89,
-                    availability: "Tue-Thu 2PM-6PM"
-                },
-                {
-                    mentor_id: "mentor003",
-                    name: "Emily Chen",
-                    skills: ["Web Development", "React", "JavaScript"],
-                    rating: 4.7,
-                    sessions_completed: 124,
-                    availability: "Mon-Wed-Fri 10AM-4PM"
+
+                if (mentorsResponse.success) {
+                    setMenteeData(prev => ({
+                        ...prev,
+                        availableMentors: mentorsResponse.data.mentors
+                    }));
                 }
-            ]
+
+                if (sessionsResponse.success) {
+                    const upcomingSessions = sessionsResponse.data.sessions.map(session => ({
+                        session_id: session._id,
+                        mentor_name: session.mentorId.fullName,
+                        skill: session.skill,
+                        date: new Date(session.scheduledDate).toLocaleDateString(),
+                        time: session.scheduledTime,
+                        status: session.status === 'scheduled' ? "Confirmed" : session.status
+                    }));
+
+                    setMenteeData(prev => ({
+                        ...prev,
+                        upcomingSessions
+                    }));
+                }
+
+                if (requestsResponse.success) {
+                    const pendingRequests = requestsResponse.data.requests.map(request => ({
+                        session_id: request._id,
+                        mentor_name: request.mentorId.fullName,
+                        skill: request.skill,
+                        date: new Date(request.requestedDate).toLocaleDateString(),
+                        time: request.requestedTime,
+                        status: request.status === 'pending' ? 'Pending' : request.status
+                    }));
+
+                    setMenteeData(prev => ({
+                        ...prev,
+                        pendingRequests
+                    }));
+                }
+            } catch (error) {
+                console.error("Error fetching mentee data:", error);
+                // Set default values on error
+                setMenteeData(prev => ({
+                    ...prev,
+                    name: user.fullName || "Mentee",
+                    interests: ["Learning new skills"],
+                    upcomingSessions: [],
+                    availableMentors: []
+                }));
+            } finally {
+                setLoading(false);
+            }
         };
-        setMenteeData(mockData);
-    }, []);
+
+        fetchMenteeData();
+    }, [user]);
 
     const handleRequestSession = (mentor) => {
         setSelectedMentor(mentor);
         setShowRequestModal(true);
     };
+
+    const handleSessionRequestSent = (requestData) => {
+        // Refresh the sessions data after a successful request
+        const fetchUpdatedSessions = async () => {
+            if (!user) return;
+
+            const token = utils.getToken();
+            if (!token) return;
+
+            try {
+                const sessionsResponse = await sessionsAPI.getMenteeSessions(token);
+                if (sessionsResponse.success) {
+                    const upcomingSessions = sessionsResponse.data.sessions.map(session => ({
+                        session_id: session._id,
+                        mentor_name: session.mentorId.fullName,
+                        skill: session.skill,
+                        date: new Date(session.scheduledDate).toLocaleDateString(),
+                        time: session.scheduledTime,
+                        status: session.status === 'scheduled' ? "Confirmed" : session.status
+                    }));
+
+                    setMenteeData(prev => ({
+                        ...prev,
+                        upcomingSessions
+                    }));
+                }
+            } catch (error) {
+                console.error("Error refreshing sessions after request:", error);
+            }
+        };
+
+        fetchUpdatedSessions();
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen grid grid-rows-[auto_1fr_auto] bg-gray-50">
+                <Navbar />
+                <main className="flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                        <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+                    </div>
+                </main>
+                <Footer />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen grid grid-rows-[auto_1fr_auto] bg-gray-50">
@@ -108,11 +209,42 @@ const MenteeDashboard = () => {
                         <section>
                             <h3 className="text-lg font-semibold text-gray-900 mb-3">Upcoming Sessions</h3>
                             <div className="space-y-4">
-                                {menteeData?.upcomingSessions.map((session) => (
-                                    <SessionCard key={session.session_id} session={session} />
-                                ))}
+                                {menteeData?.upcomingSessions.length === 0 ? (
+                                    <p className="text-gray-600">No upcoming sessions scheduled.</p>
+                                ) : (
+                                    menteeData?.upcomingSessions.map((session) => (
+                                        <SessionCard key={session.session_id} session={session} />
+                                    ))
+                                )}
                             </div>
                         </section>
+
+                        {/* Pending Requests Section */}
+                        {menteeData?.pendingRequests.length > 0 && (
+                            <section>
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3">Pending Requests</h3>
+                                <div className="space-y-4">
+                                    {menteeData?.pendingRequests.map((request) => (
+                                        <div key={request.session_id} className="border rounded-lg p-4 bg-gray-50">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h4 className="font-semibold text-gray-900">{request.mentor_name}</h4>
+                                                    <p className="text-sm text-gray-600">{request.skill}</p>
+                                                </div>
+                                                <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                                                    Pending
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-sm text-gray-600">
+                                                <span>📅 {request.date}</span>
+                                                <span>🕐 {request.time}</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-2">Waiting for mentor approval</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
 
                         {/* Available Mentors Section */}
                         <section>
@@ -148,12 +280,7 @@ const MenteeDashboard = () => {
                         setShowRequestModal(false);
                         setSelectedMentor(null);
                     }}
-                    onRequest={(sessionData) => {
-                        // Handle session request
-                        console.log("Session requested:", sessionData);
-                        setShowRequestModal(false);
-                        setSelectedMentor(null);
-                    }}
+                    onRequest={handleSessionRequestSent}
                 />
             )}
         </div>

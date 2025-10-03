@@ -1,20 +1,54 @@
 import React, { useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { sessionsAPI, utils } from "../services/api";
 
 const RequestSessionModal = ({ mentor, onClose, onRequest }) => {
+    const { user } = useAuth();
     const [formData, setFormData] = useState({
         skill: '',
         preferredDate: '',
         preferredTime: '',
         message: ''
     });
+    const [loading, setLoading] = useState(false);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        onRequest({
-            mentor_id: mentor?.mentor_id,
-            mentor_name: mentor?.name,
-            ...formData
-        });
+        if (!user) return;
+
+        setLoading(true);
+        const token = utils.getToken();
+        if (!token) {
+            alert("You must be logged in to request a session");
+            setLoading(false);
+            return;
+        }
+
+        try {
+            // Convert time format from "09:00-10:00" to "09:00"
+            const timeStart = formData.preferredTime.split('-')[0];
+
+            const response = await sessionsAPI.createRequest(token, {
+                mentorId: mentor?.mentor_id,
+                skill: formData.skill,
+                requestedDate: formData.preferredDate,
+                requestedTime: timeStart,
+                message: formData.message
+            });
+
+            if (response.success) {
+                alert("Session request sent successfully!");
+                onRequest(response.data);
+                onClose();
+            } else {
+                alert("Failed to send session request: " + response.message);
+            }
+        } catch (error) {
+            console.error("Error sending session request:", error);
+            alert("Failed to send session request. Please try again.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleChange = (e) => {
@@ -125,9 +159,10 @@ const RequestSessionModal = ({ mentor, onClose, onRequest }) => {
                             </button>
                             <button
                                 type="submit"
-                                className="flex-1 px-4 py-2 bg-primaryGreen text-white rounded-md hover:bg-darkGreen transition-colors"
+                                disabled={loading}
+                                className="flex-1 px-4 py-2 bg-primaryGreen text-white rounded-md hover:bg-darkGreen transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Send Request
+                                {loading ? "Sending..." : "Send Request"}
                             </button>
                         </div>
                     </form>

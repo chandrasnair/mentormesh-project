@@ -278,3 +278,111 @@ form button:disabled {
 form button:disabled:hover {
   background-color: #ccc;
 }
+
+/* Add Role Section Styling */
+.add-role-section {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.add-role-info p {
+  margin: 0 0 1rem 0;
+  color: #495057;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.add-role-btn {
+  width: 100%;
+  padding: 0.8rem;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.add-role-btn:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.add-role-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* User info display for AddRole page */
+.user-info-display {
+  background-color: #f8f9fa;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid #e9ecef;
+}
+
+.user-info-display p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  color: #495057;
+}
+
+/* Role display for single role selection */
+.role-display {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.role-display p {
+  font-size: 1rem;
+  color: #1e3932;
+  font-weight: 600;
+}
+
+/* Link button styling */
+.link-button {
+  background: none;
+  border: none;
+  color: #1e3932;
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* Role buttons for SelectRole page */
+.role-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.role-btn {
+  width: 100%;
+  padding: 1.2rem;
+  background-color: #1e3932;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.role-btn:hover {
+  background-color: #244f3e;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(30, 57, 50, 0.3);
+}

@@ -6,7 +6,7 @@ const Navbar = () => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isAuthenticated, logout } = useAuth ? useAuth() : { user: null, isAuthenticated: false, logout: () => {} };
+  const { user, isAuthenticated, logout, activeRole } = useAuth ? useAuth() : { user: null, isAuthenticated: false, logout: () => {}, activeRole: null };
   const [query, setQuery] = useState("");
 
   return (
@@ -19,6 +19,11 @@ const Navbar = () => {
 
         <div className="flex items-center gap-4">
           <Link to="/home" className="text-sm text-gray-700 hover:text-primaryGreen">Home</Link>
+          
+          {/* Sessions link for mentors */}
+          {isAuthenticated && (activeRole === 'mentor' || user?.roles?.includes('mentor')) && (
+            <Link to="/sessions" className="text-sm text-gray-700 hover:text-primaryGreen">Sessions</Link>
+          )}
 
           {/* Global search always visible */}
           <form
@@ -49,16 +54,34 @@ const Navbar = () => {
               </button>
               {open && (
                 <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-md">
-                  <Link to="/home" className="block px-3 py-2 text-sm hover:bg-gray-50">Home</Link>
-                  {user?.roles?.includes('mentor') && (
+                  {/* Show role-specific profile link */}
+                  {activeRole === 'mentor' || (user?.roles?.includes('mentor') && user?.roles?.length === 1) ? (
                     <Link to="/mentor-profile" className="block px-3 py-2 text-sm hover:bg-gray-50">Mentor Profile</Link>
-                  )}
-                  {user?.roles?.includes('mentee') && (
+                  ) : activeRole === 'mentee' || (user?.roles?.includes('mentee') && user?.roles?.length === 1) ? (
                     <Link to="/mentee-profile" className="block px-3 py-2 text-sm hover:bg-gray-50">Mentee Profile</Link>
+                  ) : (
+                    <>
+                      {user?.roles?.includes('mentor') && (
+                        <Link to="/mentor-profile" className="block px-3 py-2 text-sm hover:bg-gray-50">Mentor Profile</Link>
+                      )}
+                      {user?.roles?.includes('mentee') && (
+                        <Link to="/mentee-profile" className="block px-3 py-2 text-sm hover:bg-gray-50">Mentee Profile</Link>
+                      )}
+                    </>
                   )}
-                  <Link to="#" className="block px-3 py-2 text-sm hover:bg-gray-50">Settings</Link>
+                  
+                  <Link to="/settings" className="block px-3 py-2 text-sm hover:bg-gray-50">Settings</Link>
                   <div className="h-px bg-gray-100" />
-                  <button onClick={() => { logout(); navigate('/login'); }} className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50">Logout</button>
+                  <button 
+                    onClick={() => { 
+                      logout(); 
+                      navigate('/home'); 
+                      setOpen(false);
+                    }} 
+                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    Logout
+                  </button>
                 </div>
               )}
             </div>
