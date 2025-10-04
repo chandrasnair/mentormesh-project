@@ -53,7 +53,7 @@ exports.sendVerificationEmail = async (user, token) => {
   const transporter = createEmailTransporter();
   if (!transporter) return false;
   
-  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${token}&email=${user.email}`;
+  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email?token=${token}&email=${user.email}`;
   const roleText = user.roles.length > 1 
     ? `both a <strong>mentor</strong> and a <strong>mentee</strong>`
     : `a <strong>${user.roles[0]}</strong>`;
@@ -96,7 +96,7 @@ exports.sendPasswordResetEmail = async (user, token) => {
   const transporter = createEmailTransporter();
   if (!transporter) return false;
   
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}&email=${user.email}`;
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${token}&email=${user.email}`;
   
   const mailOptions = {
     from: process.env.EMAIL_USER || 'noreply@mentormesh.com',
@@ -135,7 +135,7 @@ exports.sendMentorVerificationEmail = async (mentor, status, notes) => {
   if (!transporter) return false;
   
   const isApproved = status === 'approved';
-  const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard`;
+  const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard`;
   
   const mailOptions = {
     from: process.env.EMAIL_USER || 'noreply@mentormesh.com',
@@ -163,7 +163,7 @@ exports.sendMentorVerificationEmail = async (mentor, status, notes) => {
           <div style="text-align: center; margin: 30px 0;">
             <a href="${dashboardUrl}" 
                style="background-color: #27ae60; color: white; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
-              Go to Dashboard
+              Login Now
             </a>
           </div>
           <div style="background: white; padding: 20px; border-radius: 5px; margin-top: 20px;">
