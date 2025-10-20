@@ -22,12 +22,18 @@ const Home = () => {
           mentorsAPI.getFeatured()
         ]);
 
-        if (testimonialsResponse.success) {
+        if (testimonialsResponse?.success && testimonialsResponse.data?.testimonials) {
           setTestimonials(testimonialsResponse.data.testimonials);
         }
 
-        if (mentorsResponse.success) {
-          setFeaturedMentors(mentorsResponse.data.mentors);
+        if (mentorsResponse?.success && mentorsResponse.data?.mentors) {
+          // Correctly format the mentor data to match what MentorCard expects
+          const formattedMentors = mentorsResponse.data.mentors.map(mentor => ({
+            mentor_id: mentor._id, // Use _id for the key
+            name: mentor.fullName,
+            ...mentor.mentorProfile, // Spread the profile to get skills, bio, etc.
+          }));
+          setFeaturedMentors(formattedMentors);
         }
       } catch (error) {
         console.error("Error fetching home data:", error);
@@ -136,7 +142,7 @@ const Home = () => {
               <MentorCard
                 key={m.mentor_id}
                 mentor={m}
-                onRequestSession={() => navigate(`/search?q=${encodeURIComponent(m.skills[0])}`)}
+                onRequestSession={() => navigate(`/search?q=${encodeURIComponent(m.skills?.[0] || '')}`)}
               />
             ))}
           </div>

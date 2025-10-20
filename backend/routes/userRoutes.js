@@ -40,7 +40,8 @@ module.exports = (User, authMiddleware) => {
         accountStatus: user.accountStatus,
         profileCompletion: user.profileCompletion,
         lastLogin: user.lastLogin,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        profileImage: user.mentorProfile?.profileImage || null
       };
 
       if (user.roles.includes('mentor')) {
@@ -81,17 +82,15 @@ module.exports = (User, authMiddleware) => {
       if (fullName) user.fullName = fullName.trim();
 
       if (user.roles.includes('mentor') && mentorProfile) {
-        user.mentorProfile = {
-          ...user.mentorProfile,
-          ...mentorProfile
-        };
+        // Use Object.assign for reliable merging of nested Mongoose documents
+        Object.assign(user.mentorProfile, mentorProfile);
+        user.markModified('mentorProfile'); // Explicitly mark as modified
       }
 
       if (user.roles.includes('mentee') && menteeProfile) {
-        user.menteeProfile = {
-          ...user.menteeProfile,
-          ...menteeProfile
-        };
+        // Use Object.assign for reliable merging of nested Mongoose documents
+        Object.assign(user.menteeProfile, menteeProfile);
+        user.markModified('menteeProfile'); // Explicitly mark as modified
       }
 
       await user.save();
@@ -123,16 +122,16 @@ module.exports = (User, authMiddleware) => {
   // Add role to existing user
   router.post('/add-role', async (req, res) => {
     try {
-      const { userId, role, profileData } = req.body;
+      const { email, role, profileData } = req.body;
 
-      if (!userId || !role) {
+      if (!email || !role) {
         return res.status(400).json({
           success: false,
-          message: 'User ID and role are required'
+          message: 'Email and role are required'
         });
       }
 
-      const user = await User.findById(userId);
+      const user = await User.findOne({ email: email.toLowerCase().trim() });
       if (!user) {
         return res.status(404).json({
           success: false,
@@ -150,15 +149,15 @@ module.exports = (User, authMiddleware) => {
       user.roles.push(role);
 
       if (role === 'mentor' && profileData) {
-        user.mentorProfile = {
+        user.mentorProfile = Object.assign(user.mentorProfile || {}, {
           ...user.mentorProfile,
           ...profileData
-        };
+        });
       } else if (role === 'mentee' && profileData) {
-        user.menteeProfile = {
+        user.menteeProfile = Object.assign(user.menteeProfile || {}, {
           ...user.menteeProfile,
           ...profileData
-        };
+        });
       }
 
       await user.save();

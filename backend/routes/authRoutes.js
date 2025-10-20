@@ -52,7 +52,7 @@ module.exports = (User, utils) => {
       }
 
       if (errors.length > 0) {
-        return res.status(400).json({ success: false, message: 'Validation failed', errors });
+        return res.status(400).json({ success: false, message: 'Validation failed', errors: errors });
       }
 
       // Check if user exists
@@ -60,6 +60,9 @@ module.exports = (User, utils) => {
       if (existingUser) {
         return res.status(409).json({ 
           success: false,
+          // The frontend api.js specifically looks for this flag
+          // to trigger the redirect-to-login flow.
+          emailExists: true, 
           message: 'An account with this email already exists'
         });
       }
@@ -110,7 +113,8 @@ module.exports = (User, utils) => {
         }
         userData.menteeProfile = {
           interests: validatedInterests,
-          goals: goals?.trim(),
+          // CRITICAL FIX: goals can be undefined. .trim() would crash the server.
+          goals: goals ? goals.trim() : '',
           currentLevel: currentLevel || 'beginner',
           bio: menteeBio?.trim(),
           learningGoals: validatedLearningGoals
@@ -176,7 +180,7 @@ module.exports = (User, utils) => {
   // Login route
 router.post('/login', async (req, res) => {
   try {
-    const { emailOrUsername, password } = req.body;
+    const { emailOrUsername, password, requestedRole } = req.body;
 
     if (!emailOrUsername || !password) {
       return res.status(400).json({
@@ -211,6 +215,18 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Your mentor application is pending admin approval. You will be notified via email once approved.'
+      });
+    }
+
+    // Handle case where user exists but doesn't have the requested role
+    if (requestedRole && !user.roles.includes(requestedRole)) {
+      return res.status(403).json({
+        success: false,
+        message: `You are not registered as a ${requestedRole}. You can add this role to your existing account.`,
+        data: {
+          userId: user._id,
+          existingRoles: user.roles
+        }
       });
     }
 

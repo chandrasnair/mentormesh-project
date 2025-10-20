@@ -1,34 +1,12 @@
+/* Import Google Fonts at the top */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap');
+
 /* Ensure page fills full screen */
 html, body, #root {
   height: 100%;
   margin: 0;
 }
 
-/* Make login page take entire screen */
-.login-page {
-  display: flex;
-  height: 100vh;  /* full viewport height */
-  width: 100vw;   /* full viewport width */
-}
-
-/* Left side (slider) */
-.login-left {
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  background-color: #d8e3d2; /* light olive green */
-}
-
-/* Right side (form) */
-.login-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 2rem;
-  background: #ffffff;
-}
 /* Full screen split */
 .login-container {
   display: flex;
@@ -266,6 +244,16 @@ form select:focus {
   margin: 0.5rem 0;
   font-size: 0.9rem;
   border: 1px solid #cfc;
+}
+
+.info-message {
+  background-color: #eef;
+  color: #336;
+  padding: 0.8rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  border: 1px solid #ccf;
 }
 
 /* Disabled button styling */

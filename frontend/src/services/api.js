@@ -17,9 +17,9 @@ const apiCall = async (url, options = {}) => {
 
     if (!response.ok) {
       // Handle specific status codes
-      if (response.status === 409) {
+      if (response.status === 409 && data.emailExists) {
         // Conflict - email already exists
-        return { 
+        return {
           success: false, 
           emailExists: true, 
           message: data.message || 'Email already exists'
@@ -79,8 +79,9 @@ export const authAPI = {
 
   verifyToken: async (token) =>
     apiCall(`${API_BASE_URL}/verify-token`, {
-      method: 'POST',
-      body: JSON.stringify({ token })
+      method: 'POST', // The backend route uses authMiddleware
+      headers: { Authorization: `Bearer ${token}` } // So the token must be in the header
+      // The body is not needed as the middleware extracts the user from the token
     }),
 
   getProfile: async (token) =>
@@ -99,13 +100,9 @@ export const authAPI = {
   // Add role endpoint for existing users
   addRole: async (email, role, profileData = {}) =>
     apiCall(`${API_BASE_URL}/add-role`, {
-      method: 'POST',
+      method: 'POST', // This should be POST to create/add a sub-resource
       body: JSON.stringify({ email, role, profileData })
-    }),
-
-  // Get user by email (for "Add Role" flow)
-  getUserByEmail: async (email) =>
-    apiCall(`${API_BASE_URL}/users?email=${encodeURIComponent(email)}`)
+    })
 };
 
 // Skills API
@@ -121,12 +118,99 @@ export const statsAPI = {
 // Featured mentors API
 export const mentorsAPI = {
   getFeatured: async (limit = 3) =>
-    apiCall(`${API_BASE_URL}/mentors/featured?limit=${limit}`)
+    apiCall(`${API_BASE_URL}/mentors/featured?limit=${limit}`),
+  search: async (query) =>
+    apiCall(`${API_BASE_URL}/mentors/search?q=${encodeURIComponent(query)}`)
 };
 
 // Testimonials/Feedback API
 export const testimonialsAPI = {
   getAll: async () => apiCall(`${API_BASE_URL}/testimonials`)
+};
+
+// Availability API
+export const availabilityAPI = {
+  // Create a single availability slot (mentor)
+  createSlot: async (token, slotData) =>
+    apiCall(`${API_BASE_URL}/availability`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(slotData)
+    }),
+
+  // Create multiple slots (mentor)
+  createSlotsBulk: async (token, slots) =>
+    apiCall(`${API_BASE_URL}/availability/bulk`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ slots })
+    }),
+
+  // Get a specific mentor's availability (public)
+  getMentorAvailability: async (mentorId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiCall(`${API_BASE_URL}/availability/mentor/${mentorId}?${query}`);
+  },
+
+  // Update a slot (mentor)
+  updateSlot: async (token, slotId, updateData) =>
+    apiCall(`${API_BASE_URL}/availability/${slotId}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(updateData)
+    }),
+
+  // Delete a slot (mentor)
+  deleteSlot: async (token, slotId) =>
+    apiCall(`${API_BASE_URL}/availability/${slotId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+
+  // Book a slot (mentee)
+  bookSlot: async (token, slotId, bookingId = null) =>
+    apiCall(`${API_BASE_URL}/availability/${slotId}/book`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ bookingId })
+    }),
+
+  // Cancel a booking (mentor or mentee)
+  cancelBooking: async (token, slotId) =>
+    apiCall(`${API_BASE_URL}/availability/${slotId}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+
+  // Complete a session (mentor)
+  completeSession: async (token, slotId) =>
+    apiCall(`${API_BASE_URL}/availability/${slotId}/complete`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+
+  // Get a mentor's own stats (mentor)
+  getMentorStats: async (token) =>
+    apiCall(`${API_BASE_URL}/availability/mentor/stats`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+
+  // Get a mentee's own bookings (mentee)
+  getMenteeBookings: async (token, includePast = false) => {
+    const query = includePast ? '?includePast=true' : '';
+    return apiCall(`${API_BASE_URL}/availability/mentee/bookings${query}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  },
+
+  // Get meeting details for a booked slot (mentor or mentee)
+  getMeetingDetails: async (token, slotId) =>
+    apiCall(`${API_BASE_URL}/availability/${slotId}/meeting`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    })
 };
 
 // Health check functions
@@ -226,6 +310,20 @@ export const sessionsAPI = {
     })
 };
 
+// Image upload API
+export const uploadAPI = {
+  uploadProfileImage: async (token, imageFile) => {
+    const formData = new FormData();
+    formData.append('profileImage', imageFile);
+
+    return apiCall(`${API_BASE_URL}/upload/profile-image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData
+    });
+  }
+};
+
 // Utility functions
 export const utils = {
   setToken: (token) => localStorage.setItem('mentormesh_token', token),
@@ -258,6 +356,7 @@ export default {
   authAPI,
   skillsAPI,
   statsAPI,
+  availabilityAPI,
   sessionsAPI,
   mentorsAPI,
   testimonialsAPI,

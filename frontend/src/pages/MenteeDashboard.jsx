@@ -13,7 +13,11 @@ const MenteeDashboard = () => {
     const navigate = useNavigate();
     const [menteeData, setMenteeData] = useState({
         name: "",
+        goals: "",
+        currentLevel: "",
+        bio: "",
         interests: [],
+        coLearningGoals: [],
         upcomingSessions: [],
         pendingRequests: [],
         availableMentors: []
@@ -55,19 +59,23 @@ const MenteeDashboard = () => {
                     setMenteeData(prev => ({
                         ...prev,
                         name: userProfile.fullName,
-                        interests: userProfile.menteeProfile?.interests || []
+                        goals: userProfile.menteeProfile?.goals || "",
+                        currentLevel: userProfile.menteeProfile?.currentLevel || "",
+                        bio: userProfile.menteeProfile?.bio || "",
+                        interests: userProfile.menteeProfile?.interests || [],
+                        coLearningGoals: userProfile.menteeProfile?.learningGoals || []
                     }));
                 }
 
-                if (mentorsResponse.success) {
+                if (mentorsResponse?.success && mentorsResponse.data?.mentors) {
                     setMenteeData(prev => ({
                         ...prev,
                         availableMentors: mentorsResponse.data.mentors
                     }));
                 }
 
-                if (sessionsResponse.success) {
-                    const upcomingSessions = sessionsResponse.data.sessions.map(session => ({
+                if (sessionsResponse?.success && Array.isArray(sessionsResponse.sessions)) {
+                    const upcomingSessions = sessionsResponse.sessions.map(session => ({
                         session_id: session._id,
                         mentor_name: session.mentorId.fullName,
                         skill: session.skill,
@@ -82,8 +90,8 @@ const MenteeDashboard = () => {
                     }));
                 }
 
-                if (requestsResponse.success) {
-                    const pendingRequests = requestsResponse.data.requests.map(request => ({
+                if (requestsResponse?.success && Array.isArray(requestsResponse.requests)) {
+                    const pendingRequests = requestsResponse.requests.map(request => ({
                         session_id: request._id,
                         mentor_name: request.mentorId.fullName,
                         skill: request.skill,
@@ -130,8 +138,8 @@ const MenteeDashboard = () => {
 
             try {
                 const sessionsResponse = await sessionsAPI.getMenteeSessions(token);
-                if (sessionsResponse.success) {
-                    const upcomingSessions = sessionsResponse.data.sessions.map(session => ({
+                if (sessionsResponse?.success && sessionsResponse.sessions) {
+                    const upcomingSessions = sessionsResponse.sessions.map(session => ({
                         session_id: session._id,
                         mentor_name: session.mentorId.fullName,
                         skill: session.skill,
@@ -193,17 +201,58 @@ const MenteeDashboard = () => {
                     <h1 className="text-2xl md:text-3xl font-extrabold text-primaryGreen text-center">Welcome back, {menteeData?.name}</h1>
 
                     <div className="mt-8 space-y-8">
-                        {/* Learning Interests Section */}
+                        {/* Bio Section */}
+                        {menteeData?.bio && (
+                            <section>
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3">About You</h3>
+                                <p className="text-gray-700 leading-relaxed">{menteeData.bio}</p>
+                            </section>
+                        )}
+
+                        {/* Learning Goals Section */}
+                        {menteeData?.goals && (
+                            <section>
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3">Your Learning Goals</h3>
+                                <p className="text-gray-700 leading-relaxed">{menteeData.goals}</p>
+                            </section>
+                        )}
+
+                        {/* Current Level & Interests Section */}
                         <section>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-3">Your Learning Interests</h3>
-                            <div className="flex gap-2 flex-wrap">
-                                {menteeData?.interests.map((interest, index) => (
-                                    <span key={index} className="bg-lightGreen text-primaryGreen px-3 py-1 rounded-full text-sm">
-                                        {interest}
-                                    </span>
-                                ))}
+                            <h3 className="text-lg font-semibold text-gray-900 mb-3">Your Profile</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                {menteeData?.currentLevel && (
+                                    <div className="bg-lightGreen bg-opacity-30 rounded-lg p-4">
+                                        <h4 className="font-medium text-primaryGreen mb-1">Current Level</h4>
+                                        <p className="text-gray-700 capitalize">{menteeData.currentLevel}</p>
+                                    </div>
+                                )}
+                                <div className="bg-primaryGreen bg-opacity-10 rounded-lg p-4">
+                                    <h4 className="font-medium text-primaryGreen mb-1">Areas of Interest</h4>
+                                    <div className="flex gap-2 flex-wrap mt-1">
+                                        {menteeData?.interests.map((interest, index) => (
+                                            <span key={index} className="bg-white text-primaryGreen px-2 py-1 rounded-full text-xs">
+                                                {interest}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </section>
+
+                        {/* Co-Learning Goals Section */}
+                        {menteeData?.coLearningGoals && menteeData.coLearningGoals.length > 0 && (
+                            <section>
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3">What You're Learning</h3>
+                                <div className="flex gap-2 flex-wrap">
+                                    {menteeData.coLearningGoals.map((goal, index) => (
+                                        <span key={index} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                                            {goal}
+                                        </span>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
 
                         {/* Upcoming Sessions Section */}
                         <section>

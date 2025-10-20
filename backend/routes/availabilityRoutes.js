@@ -4,13 +4,21 @@
 const express = require('express');
 const router = express.Router();
 
-module.exports = (Availability) => {
+module.exports = (Availability, authMiddleware) => {
+
+  // Add a check to ensure authMiddleware is a valid function
+  if (typeof authMiddleware !== 'function') {
+    throw new Error('FATAL ERROR: authMiddleware is not a function. Check the order of imports in server.js.');
+  }
 
   // Create single availability slot
-  router.post('/', async (req, res) => {
+  router.post('/', authMiddleware, async (req, res) => {
     try {
-      const { mentorId, date, startTime, endTime, timezone, notes } = req.body;
+      const { date, startTime, endTime, timezone, notes } = req.body;
+      const mentorId = req.userId; // Get mentorId from authenticated user
 
+      // Authorization: Only mentors can create slots
+      if (!req.userRoles.includes('mentor')) return res.status(403).json({ success: false, message: 'Only mentors can create availability.' });
       if (!mentorId || !date || !startTime || !endTime) {
         return res.status(400).json({
           success: false,
@@ -77,10 +85,13 @@ module.exports = (Availability) => {
   });
 
   // Create multiple availability slots (bulk)
-  router.post('/bulk', async (req, res) => {
+  router.post('/bulk', authMiddleware, async (req, res) => {
     try {
-      const { mentorId, slots } = req.body;
+      const { slots } = req.body; // The frontend sends { slots: [...] }
+      const mentorId = req.userId; // Get mentorId from authenticated user
 
+      // Authorization: Only mentors can create slots
+      if (!req.userRoles.includes('mentor')) return res.status(403).json({ success: false, message: 'Only mentors can create availability.' });
       if (!mentorId || !slots || !Array.isArray(slots) || slots.length === 0) {
         return res.status(400).json({
           success: false,
@@ -118,7 +129,34 @@ module.exports = (Availability) => {
         return res.status(400).json({ success: false, message: 'Some slots have validation errors', errors });
       }
 
-      const availabilitySlots = await Availability.insertMany(validSlots);
+      // Handle case where the filtered list of valid slots is empty.
+      if (validSlots.length === 0) {
+        return res.status(200).json({ success: true, message: 'No new valid slots to create.', data: { count: 0, slots: [] } });
+      }
+
+      // PREVENT DUPLICATES: Check if any of the valid slots already exist
+      const existingSlotsCheck = validSlots.map(slot => ({
+        mentorId: mentorId, // Use the mentorId from the authenticated session
+        date: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+      }));
+
+      if (existingSlotsCheck.length > 0) {
+        const existing = await Availability.findOne({ $or: existingSlotsCheck });
+  
+        if (existing) {
+          return res.status(409).json({
+            success: false,
+            message: 'One or more of the provided slots already exist or overlap.'
+          });
+        }
+      }
+      
+      // Use ordered: false to attempt inserting all valid documents,
+      // even if some fail validation. This prevents a full crash on a single bad entry.
+      // The catch block will handle any DB-level errors.
+      const availabilitySlots = await Availability.insertMany(validSlots, { ordered: false });
 
       res.status(201).json({
         success: true,
@@ -128,6 +166,9 @@ module.exports = (Availability) => {
 
     } catch (error) {
       console.error('Bulk create availability error:', error);
+      if (error.name === 'MongoBulkWriteError' && error.code === 11000) {
+        return res.status(409).json({ success: false, message: 'One or more slots conflicted with existing entries.' });
+      }
       res.status(500).json({ success: false, message: 'Server error while creating availability slots' });
     }
   });
@@ -287,15 +328,21 @@ module.exports = (Availability) => {
   });
 
   // Update availability slot
-  router.put('/:id', async (req, res) => {
+  router.put('/:id', authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
       const { date, startTime, endTime, timezone, status, notes, meetingLink } = req.body;
+      const mentorId = req.userId;
 
       const availability = await Availability.findById(id);
 
       if (!availability) {
         return res.status(404).json({ success: false, message: 'Availability slot not found' });
+      }
+
+      // Authorization: Ensure the user owns this slot
+      if (availability.mentorId.toString() !== mentorId) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to update this slot' });
       }
 
       if (availability.isBooked && (date || startTime || endTime)) {
@@ -340,15 +387,22 @@ module.exports = (Availability) => {
   });
 
   // Delete availability slot
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
+      const mentorId = req.userId;
 
       const availability = await Availability.findById(id);
 
       if (!availability) {
         return res.status(404).json({ success: false, message: 'Availability slot not found' });
       }
+
+      // Authorization: Ensure the user owns this slot
+      if (availability.mentorId.toString() !== mentorId) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to delete this slot' });
+      }
+
 
       if (availability.isBooked) {
         return res.status(400).json({
@@ -368,11 +422,14 @@ module.exports = (Availability) => {
   });
 
   // Book an availability slot
-  router.post('/:id/book', async (req, res) => {
+  router.post('/:id/book', authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
-      const { menteeId, bookingId } = req.body;
+      const { bookingId } = req.body; // bookingId might come from a session request
+      const menteeId = req.userId;
 
+      // Authorization: Only mentees can book slots
+      if (!req.userRoles.includes('mentee')) return res.status(403).json({ success: false, message: 'Only mentees can book slots.' });
       if (!menteeId) {
         return res.status(400).json({ success: false, message: 'menteeId is required' });
       }
@@ -420,9 +477,10 @@ module.exports = (Availability) => {
   });
 
   // Get meeting details
-  router.get('/:id/meeting', async (req, res) => {
+  router.get('/:id/meeting', authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
+      const userId = req.userId;
 
       const availability = await Availability.findById(id)
         .populate('mentorId', 'fullName email')
@@ -430,6 +488,14 @@ module.exports = (Availability) => {
 
       if (!availability) {
         return res.status(404).json({ success: false, message: 'Availability slot not found' });
+      }
+
+      // Authorization: Only the mentor or the mentee who booked can get details
+      const isMentor = availability.mentorId._id.toString() === userId;
+      const isMentee = availability.bookedBy?._id.toString() === userId;
+
+      if (!isMentor && !isMentee) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to view these meeting details.' });
       }
 
       if (!availability.isBooked) {
@@ -468,14 +534,23 @@ module.exports = (Availability) => {
   });
 
   // Cancel a booking
-  router.post('/:id/cancel', async (req, res) => {
+  router.post('/:id/cancel', authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
+      const userId = req.userId;
 
       const availability = await Availability.findById(id);
 
       if (!availability) {
         return res.status(404).json({ success: false, message: 'Availability slot not found' });
+      }
+
+      // Authorization: Only the mentor or the mentee who booked can cancel
+      const isMentor = availability.mentorId.toString() === userId;
+      const isMentee = availability.bookedBy?.toString() === userId;
+
+      if (!isMentor && !isMentee) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to cancel this booking.' });
       }
 
       if (!availability.isBooked) {
@@ -493,14 +568,20 @@ module.exports = (Availability) => {
   });
 
   // Mark slot as completed
-  router.post('/:id/complete', async (req, res) => {
+  router.post('/:id/complete', authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
+      const mentorId = req.userId;
 
       const availability = await Availability.findById(id);
 
       if (!availability) {
         return res.status(404).json({ success: false, message: 'Availability slot not found' });
+      }
+
+      // Authorization: Only the mentor who owns the slot can complete it
+      if (availability.mentorId.toString() !== mentorId) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to complete this slot.' });
       }
 
       await availability.complete();
@@ -514,10 +595,16 @@ module.exports = (Availability) => {
   });
 
   // Get mentor statistics
-  router.get('/mentor/:mentorId/stats', async (req, res) => {
+  router.get('/mentor/stats', authMiddleware, async (req, res) => {
     try {
-      const { mentorId } = req.params;
+      const mentorId = req.userId;
 
+      // Authorization: Only mentors can get their stats
+      if (!req.userRoles.includes('mentor')) {
+        return res.status(403).json({ success: false, message: 'Only mentors can view their statistics.' });
+      }
+
+      // Use authenticated mentorId for the query
       const totalSlots = await Availability.countDocuments({ mentorId });
       const bookedSlots = await Availability.countDocuments({ mentorId, isBooked: true });
       const availableSlots = await Availability.countDocuments({ 
@@ -540,10 +627,15 @@ module.exports = (Availability) => {
   });
 
   // Get mentee bookings
-  router.get('/mentee/:menteeId/bookings', async (req, res) => {
+  router.get('/mentee/bookings', authMiddleware, async (req, res) => {
     try {
-      const { menteeId } = req.params;
+      const menteeId = req.userId;
       const { includePast } = req.query;
+
+      // Authorization: Only mentees can get their bookings
+      if (!req.userRoles.includes('mentee')) {
+        return res.status(403).json({ success: false, message: 'Only mentees can view their bookings.' });
+      }
 
       const query = { bookedBy: menteeId, isBooked: true };
 

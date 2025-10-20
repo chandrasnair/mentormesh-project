@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "./Login.css";
+import ForgotPasswordModal from "../components/ForgotPasswordModal";
 
 import boy from "../assets/boy.png";
 import twowoman from "../assets/twowoman.png";
@@ -25,6 +26,7 @@ const Login = () => {
   const [userEmail, setUserEmail] = useState("");
   const [existingRoles, setExistingRoles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const { login, addRole } = useAuth();
   const navigate = useNavigate();
@@ -37,24 +39,6 @@ const Login = () => {
     }, 4000);
     return () => clearInterval(timer);
   }, []);
-
-  // Handle messages from signup or other pages
-  useEffect(() => {
-    if (location.state?.message) {
-      setSuccess(location.state.message);
-      setTimeout(() => setSuccess(""), 5000);
-    }
-    if (location.state?.email) {
-      setFormData(prev => ({ ...prev, emailOrUsername: location.state.email }));
-      setUserEmail(location.state.email);
-      // Show add role section immediately if redirected from signup with existing email
-      if (location.state?.message?.toLowerCase().includes("already registered")) {
-        setShowAddRoleSection(true);
-        // We don't know the existing roles yet, so we'll handle this in the add role page
-        setExistingRoles([]);
-      }
-    }
-  }, [location.state]);
 
   const handleChange = (e) => {
     setFormData({
@@ -86,9 +70,10 @@ const Login = () => {
           navigate("/home");
         }
       } else {
-        setError(result.error);
-        // Show add role section if login failed due to missing credentials
-        if (formData.emailOrUsername) {
+        const errorMessage = result.message || result.error || "Login failed. Please check your credentials.";
+        setError(errorMessage);
+        // If login failed because the role is missing, show the "Add Role" section.
+        if (errorMessage.toLowerCase().includes("not registered as")) {
           setUserEmail(formData.emailOrUsername);
           setShowAddRoleSection(true);
         }
@@ -173,7 +158,9 @@ const Login = () => {
           )}
 
           <div className="extra-links">
-            <Link to="#">Forgot Password?</Link> |{" "}
+            <button onClick={() => setShowForgotPassword(true)} className="link-button">
+              Forgot Password?
+            </button> |{" "}
             <Link to="/signup">Create Account</Link>
           </div>
         </div>

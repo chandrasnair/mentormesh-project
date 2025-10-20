@@ -11,6 +11,7 @@ import Settings from "./pages/Settings";
 import Home from "./pages/Home";
 import SearchResults from "./pages/SearchResults";
 import SelectRole from "./pages/SelectRole";
+import VerifyEmail from "./pages/VerifyEmail";
 
 
 function App() {
@@ -18,6 +19,11 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* The 'future' prop is added to opt-in to future features and silence warnings */}
+          <Route path="*" element={<Home />} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            {/* Nested routes can be defined here if needed */}
+          </Route>
+
           <Route path="/" element={<Navigate to="/home" replace />} />
           <Route path="/select-role" element={<SelectRole />} />
           <Route path="/home" element={<Home />} />
@@ -25,6 +31,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/add-role" element={<AddRole />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/mentor-profile" element={<MentorDashboard />}/>
           <Route path="/mentee-profile" element={<MenteeDashboard />}/>
           <Route path="/sessions" element={<Sessions />}/>
@@ -36,5 +43,3 @@ function App() {
 }
 
 export default App;
-
-

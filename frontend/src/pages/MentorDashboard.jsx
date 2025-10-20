@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { availabilityAPI, utils } from "../services/api";
 import AvailabilityCard from "../components/AvailabilityCard";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import EditSkillsModal from "../components/EditSkillsModal";
 import EditAvailabilityModal from "../components/EditAvailabilityModal";
+import EditProfileModal from "../components/EditProfileModal";
 
 const MentorDashboard = () => {
     const { user, updateProfile } = useAuth();
@@ -12,6 +14,34 @@ const MentorDashboard = () => {
     const [showAvailability, setShowAvailability] = useState(false);
     const [showEditProfile, setShowEditProfile] = useState(false);
     const [profilePicture, setProfilePicture] = useState(null);
+    const [mentorAvailability, setMentorAvailability] = useState([]);
+    const [loadingAvailability, setLoadingAvailability] = useState(true);
+
+    // Fetch mentor's availability slots from the dedicated endpoint
+    const fetchAvailability = async () => {
+        if (!user) return;
+        setLoadingAvailability(true);
+        try {
+            const response = await availabilityAPI.getMentorAvailability(user._id);
+            if (response?.success && response.data?.availability) {
+                setMentorAvailability(response.data.availability);
+            }
+        } catch (error) {
+            console.error("Failed to fetch availability:", error);
+        } finally {
+            setLoadingAvailability(false);
+        }
+    };
+
+    useEffect(() => {
+        // CRITICAL FIX: Ensure user and user._id exist before fetching.
+        if (user && user._id) {
+            fetchAvailability();
+        } else {
+            // If there is no user, stop the loading state.
+            setLoadingAvailability(false);
+        }
+    }, [user]); // Depend on the user object itself.
 
     // Use actual user data instead of mock data
     const mentorData = user ? {
@@ -20,7 +50,6 @@ const MentorDashboard = () => {
         bio: user.mentorProfile?.bio || "",
         expertise: user.mentorProfile?.expertise || "",
         experience: user.mentorProfile?.experience || 0,
-        availability: user.mentorProfile?.availability || []
     } : null;
 
     return (
@@ -89,12 +118,17 @@ const MentorDashboard = () => {
                                     type="file"
                                     accept="image/*"
                                     className="hidden"
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                         const file = e.target.files[0];
                                         if (file) {
+                                            // Show immediate preview
                                             const reader = new FileReader();
                                             reader.onload = (e) => setProfilePicture(e.target.result);
                                             reader.readAsDataURL(file);
+
+                                            // Note: Upload functionality will work once multer is installed on backend
+                                            console.log('Profile image selected for upload:', file.name);
+                                            // Upload will be handled when uploadAPI becomes available
                                         }
                                     }}
                                 />
@@ -158,12 +192,16 @@ const MentorDashboard = () => {
                         <section>
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="text-lg font-semibold text-gray-900">Your Availability</h3>
-                                <button onClick={() => setShowAvailability(true)} className="text-sm text-primaryGreen hover:underline">
-                                    {mentorData?.availability?.length === 0 ? "Add" : "Edit"}
+                                <button onClick={() => setShowAvailability(true)} className="text-sm text-primaryGreen hover:underline" disabled={loadingAvailability}>
+                                    {mentorAvailability.length === 0 ? "Add" : "Edit"}
                                 </button>
                             </div>
                             
-                            {mentorData?.availability?.length === 0 ? (
+                            {loadingAvailability ? (
+                                <div className="text-center py-8 px-4 bg-gray-50 rounded-lg">
+                                    <p className="text-gray-600">Loading availability...</p>
+                                </div>
+                            ) : mentorAvailability.length === 0 ? (
                                 <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                                     <div className="max-w-sm mx-auto">
                                         <div className="flex justify-center mb-4">
@@ -187,8 +225,8 @@ const MentorDashboard = () => {
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                                    {mentorData.availability.map((slot) => (
-                                        <AvailabilityCard key={slot.id} slot={slot} />
+                                    {mentorAvailability.map((slot) => (
+                                        <AvailabilityCard key={slot._id} slot={slot} onEdit={() => {}} onDelete={() => {}} />
                                     ))}
                                 </div>
                             )}
@@ -221,21 +259,62 @@ const MentorDashboard = () => {
             )}
             {showAvailability && (
                 <EditAvailabilityModal
-                    initialSlots={mentorData?.availability || []}
+                    initialSlots={mentorAvailability}
                     onClose={() => setShowAvailability(false)}
-                    onSave={async (availability) => {
+                    onSave={async (updatedSlots) => {
                         try {
-                            // Update the user's mentor profile with new availability
-                            await updateProfile({
-                                mentorProfile: {
-                                    ...user.mentorProfile,
-                                    availability: availability
-                                }
+                            const token = utils.getToken();
+                            const originalSlotIds = new Set(mentorAvailability.map(s => s._id));
+                            const updatedSlotIds = new Set(updatedSlots.filter(s => s._id).map(s => s._id));
+
+                            // 1. Identify slots to DELETE
+                            const slotsToDelete = mentorAvailability.filter(s => !updatedSlotIds.has(s._id));
+
+                            // 2. Identify slots to CREATE
+                            const slotsToCreate = updatedSlots.filter(s => !s._id && s.date && s.startTime && s.endTime);
+
+                            // 3. Identify slots to UPDATE
+                            const slotsToUpdate = updatedSlots.filter(s => s._id && originalSlotIds.has(s._id));
+
+                            // Execute API calls in parallel
+                            const promises = [];
+
+                            if (slotsToCreate.length > 0) {
+                                promises.push(availabilityAPI.createSlotsBulk(token, slotsToCreate));
+                            }
+
+                            slotsToUpdate.forEach(slot => {
+                                const { _id, ...updateData } = slot;
+                                promises.push(availabilityAPI.updateSlot(token, _id, updateData));
                             });
-                            setShowAvailability(false);
+
+                            slotsToDelete.forEach(slot => {
+                                promises.push(availabilityAPI.deleteSlot(token, slot._id));
+                            });
+
+                            await Promise.all(promises);
+
+                            // After saving, refetch the availability to update the dashboard
+                            await fetchAvailability();
+                            setShowAvailability(false); // Close modal on success
                         } catch (error) {
                             console.error('Failed to update availability:', error);
-                            // Could show error message to user here
+                            // You could show an error message to the user here
+                        }
+                    }}
+                />
+            )}
+            {showEditProfile && (
+                <EditProfileModal
+                    user={user}
+                    onClose={() => setShowEditProfile(false)}
+                    onSave={async (profileData) => {
+                        try {
+                            await updateProfile(profileData);
+                            setShowEditProfile(false);
+                        } catch (error) {
+                            console.error('Failed to update profile:', error);
+                            throw error;
                         }
                     }}
                 />

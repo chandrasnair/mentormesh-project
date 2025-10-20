@@ -115,7 +115,7 @@ const Signup = () => {
         if (user.roles.length > 1) {
           navigate("/select-role");
         } else {
-          navigate("/home");
+          navigate("/home", { state: { message: "Account created! Please check your email to verify your account." } });
         }
       } else if (result.emailExists) {
         setError("Email already exists. Redirecting to login page...");
@@ -123,7 +123,8 @@ const Signup = () => {
           navigate("/login", { 
             state: { 
               email: formData.email,
-              message: "This email is already registered. Please login or add a new role."
+              message: "This email is already registered. Please login, or add a new role below.",
+              showAddRole: true
             }
           });
         }, 2000);

@@ -13,18 +13,13 @@ const SelectRole = () => {
 
   // Redirect if user doesn't have multiple roles
   useEffect(() => {
-    if (!user || !user.roles || user.roles.length < 2) {
-      // If single role or not logged in, redirect to appropriate profile
-      if (user?.roles?.includes("mentor") && user.accountStatus === "active") {
-        navigate("/mentor-profile");
-      } else if (user?.roles?.includes("mentor") && user.accountStatus !== "active") {
-        // Single mentor role but pending approval - show pending page or stay here
-        // For now, redirect to home with a message about pending approval
-        navigate("/home");
-      } else if (user?.roles?.includes("mentee")) {
-        navigate("/mentee-profile");
-      } else {
-        navigate("/home");
+    // If user data is available but they don't have multiple roles,
+    // or if the only other role is a pending mentor, redirect away.
+    if (user) {
+      const activeRoles = user.roles?.filter(role => role === 'mentee' || (role === 'mentor' && user.accountStatus === 'active'));
+      // If there are less than 2 active roles to choose from, redirect.
+      if (!activeRoles || activeRoles.length < 2) {
+        navigate("/home"); // Redirect to home if they land here incorrectly
       }
     }
   }, [user, navigate]);
@@ -35,8 +30,10 @@ const SelectRole = () => {
     navigate("/home");
   };
 
-  // Don't render if user doesn't have multiple roles
-  if (!user || !user.roles || user.roles.length < 2) {
+  // Show a loading state or return null if user data isn't ready yet
+  // or if they don't have multiple roles.
+  const availableRoles = user?.roles?.filter(role => role === 'mentee' || (role === 'mentor' && user.accountStatus === 'active'));
+  if (!user || !availableRoles || availableRoles.length < 2) {
     return null;
   }
 

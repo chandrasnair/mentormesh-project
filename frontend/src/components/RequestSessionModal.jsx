@@ -26,14 +26,23 @@ const RequestSessionModal = ({ mentor, onClose, onRequest }) => {
 
         try {
             // Convert time format from "09:00-10:00" to "09:00"
-            const timeStart = formData.preferredTime.split('-')[0];
+            const [timeStart, timeEnd] = formData.preferredTime.split('-');
+
+            // Calculate duration in minutes
+            let duration = 60; // Default duration
+            if (timeStart && timeEnd) {
+                const start = new Date(`1970-01-01T${timeStart}:00`);
+                const end = new Date(`1970-01-01T${timeEnd}:00`);
+                duration = (end - start) / (1000 * 60);
+            }
 
             const response = await sessionsAPI.createRequest(token, {
                 mentorId: mentor?.mentor_id,
-                skill: formData.skill,
-                requestedDate: formData.preferredDate,
-                requestedTime: timeStart,
-                message: formData.message
+                skill: formData.skill, // This matches
+                preferredDate: formData.preferredDate, // Changed from requestedDate
+                preferredTime: timeStart, // Changed from requestedTime
+                description: formData.message, // Changed from message
+                duration: duration // Add the calculated duration
             });
 
             if (response.success) {
@@ -41,11 +50,11 @@ const RequestSessionModal = ({ mentor, onClose, onRequest }) => {
                 onRequest(response.data);
                 onClose();
             } else {
-                alert("Failed to send session request: " + response.message);
+                alert(`Failed to send session request: ${response.message || 'Please check your inputs and try again.'}`);
             }
         } catch (error) {
             console.error("Error sending session request:", error);
-            alert("Failed to send session request. Please try again.");
+            alert("An unexpected error occurred while sending your request. Please try again.");
         } finally {
             setLoading(false);
         }

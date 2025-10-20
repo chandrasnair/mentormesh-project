@@ -1,6 +1,38 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 
 const MentorCard = ({ mentor, onRequestSession }) => {
+    const navigate = useNavigate();
+    const { user } = useAuth();
+
+    const handleRequestSession = () => {
+        // Check if user is logged in
+        if (!user) {
+            navigate('/login');
+            return;
+        }
+
+        // If user is mentee, open request modal
+        if (user.roles.includes('mentee')) {
+            if (onRequestSession) {
+                onRequestSession(mentor);
+            } else {
+                // Fallback - navigate to dashboard
+                navigate('/dashboard');
+            }
+            return;
+        }
+
+        // If user is mentor, show message or navigate home
+        // For now, just navigate home (could show a modal in future)
+        navigate('/');
+
+        // Call the original onRequestSession if provided as backup
+        if (onRequestSession) {
+            onRequestSession(mentor);
+        }
+    };
     return (
         <div className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white">
             <div className="flex items-start justify-between mb-3">
@@ -45,7 +77,7 @@ const MentorCard = ({ mentor, onRequestSession }) => {
             )}
 
             <button
-                onClick={onRequestSession}
+                onClick={handleRequestSession}
                 className="w-full inline-flex items-center justify-center px-3 py-2 rounded-md bg-primaryGreen text-white hover:bg-darkGreen text-sm font-medium transition-colors"
             >
                 Request Session

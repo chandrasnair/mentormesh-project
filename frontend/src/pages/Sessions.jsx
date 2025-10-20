@@ -37,9 +37,9 @@ const Sessions = () => {
             sessionsAPI.getMentorSessions(token)
           ]);
 
-          if (requestsResponse.success && sessionsResponse.success) {
+          if (requestsResponse?.success && sessionsResponse?.success) {
             // Transform pending requests data for mentor view
-            const pendingRequests = requestsResponse.data.requests
+            const pendingRequests = requestsResponse.requests
               .filter(req => req.status === 'pending')
               .map(req => ({
                 id: req._id,
@@ -52,7 +52,7 @@ const Sessions = () => {
               }));
 
             // Transform upcoming sessions data
-            const upcomingSessions = sessionsResponse.data.sessions.map(session => ({
+            const upcomingSessions = sessionsResponse.sessions.map(session => ({
               id: session._id,
               menteeName: session.menteeId.fullName,
               skill: session.skill,
@@ -75,9 +75,9 @@ const Sessions = () => {
             sessionsAPI.getMenteeSessions(token)
           ]);
 
-          if (requestsResponse.success && sessionsResponse.success) {
+          if (requestsResponse?.success && sessionsResponse?.success) {
             // Transform requests data for mentee view (all their requests)
-            const myRequests = requestsResponse.data.requests.map(req => ({
+            const myRequests = requestsResponse.requests.map(req => ({
               id: req._id,
               mentorName: req.mentorId.fullName, // Show mentor name instead of mentee name
               skill: req.skill,
@@ -90,7 +90,7 @@ const Sessions = () => {
             }));
 
             // Add confirmed sessions to the list
-            const confirmedSessions = sessionsResponse.data.sessions.map(session => ({
+            const confirmedSessions = sessionsResponse.sessions.map(session => ({
               id: session._id,
               mentorName: session.mentorId.fullName,
               skill: session.skill,
@@ -141,8 +141,8 @@ const Sessions = () => {
           sessionsAPI.getMentorSessions(token)
         ]);
 
-        if (requestsResponse.success && sessionsResponse.success) {
-          const pendingRequests = requestsResponse.data.requests
+        if (requestsResponse?.success && sessionsResponse?.success) {
+          const pendingRequests = requestsResponse.requests
             .filter(req => req.status === 'pending')
             .map(req => ({
               id: req._id,
@@ -154,7 +154,7 @@ const Sessions = () => {
               menteeEmail: req.menteeId.email
             }));
 
-          const upcomingSessions = sessionsResponse.data.sessions.map(session => ({
+          const upcomingSessions = sessionsResponse.sessions.map(session => ({
             id: session._id,
             menteeName: session.menteeId.fullName,
             skill: session.skill,
